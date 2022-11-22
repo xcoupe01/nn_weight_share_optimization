@@ -47,9 +47,14 @@ def pair_rulette(individuals:list, num_pairs:int) -> list:
                 in_index = 0
                 run += 1
 
-                while fitness_index > individuals[in_index].fitness:
-                    fitness_index -= individuals[in_index].fitness
-                    in_index += 1
+                if fit_sum > 0:
+                    while fitness_index > individuals[in_index].fitness:
+                        fitness_index -= individuals[in_index].fitness
+                        in_index += 1
+                else:
+                    while fitness_index < individuals[in_index].fitness:
+                        fitness_index -= individuals[in_index].fitness
+                        in_index += 1  
 
                 # adding parent
                 if individuals[in_index] not in parents:

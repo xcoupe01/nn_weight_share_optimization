@@ -64,7 +64,7 @@ class Particle :
         # setting curent representation
         self.representation = []
         for i in range(len(self.possible_values)):
-            index_position = min(int(self.position[i]), len(self.possible_values[i]))
+            index_position = min(int(self.position[i]), len(self.possible_values[i]) - 1)
             self.representation.append(self.possible_values[i][index_position])
 
     def __repr__(self) -> str:
@@ -139,7 +139,7 @@ class Particle :
         # compute new representation
         self.representation = []
         for i in range(len(self.possible_values)):
-            index_position = min(int(self.position[i]), len(self.possible_values[i]))
+            index_position = min(int(self.position[i]), len(self.possible_values[i]) - 1)
             self.representation.append(self.possible_values[i][index_position])
 
 class PSOController:
@@ -213,37 +213,48 @@ class PSOController:
             self.swarm[i].my_best_fit = best_fit.iloc[0]['fitness']
             self.swarm[i].representation = eval(current_fit.iloc[0]['representation'])
 
-    def run(self, time:int, logger_fc=None, limit_position:bool=True, limit_velocity:bool=True, verbose:bool=False) -> list:
+    def run(self, time:int, logger_fc=None, save_data:pd.DataFrame=None, limit_position:bool=True, limit_velocity:bool=True, verbose:bool=False) -> list:
         """Executes the whole particle swarm optimization for a given number of time iterations.
 
         Args:
             time (int): is the number of iterations over the whole swarm.
-            logger_fc (function, optional): is an optional logger function that can acces the whole object 
-            after each iteration and is meant to log data. Defaults to None.
+            logger_fc (function, optional): is an optional logger function that can acces the whole object
+            after each iteration and is meant to log data (if save_data given its also its input). Defaults to None.
+            save_data (pd.Dataframe, optional): is an optional pandas datagrame to log data to. If defined,
+            it is expected that logger_fc takes this dataframe and the function returns the updated one.
+            Also if defined. the function returns the saves, otherwise the best found solution is returned.
             limit_position (bool, optional): defines if the position is limited during the run. Defaults to True.
             limit_velocity (bool, optional): defines if the velocity is limited during the run. Defaults to True.
             verbose (bool, optional): enables progression prints. Defaults to False.
 
         Returns:
-            list: the best found position of the whole swarm.
+            list: the best found position of the whole swarm. When save_data is defined, the data are returned instead.
+                or
+            pd.Dataframe: save_data if this parameter is defined at the begining
         """
 
         # initing swarm fitness
         if not self.jump_start:
             for particle in self.swarm:
                 particle.compute_fitness()
+            # logging
             if logger_fc is not None:
-                logger_fc(self)
+                if save_data is not None:
+                    save_data = logger_fc(self, save_data)
+                else:
+                    logger_fc(self)
 
         # initing best swarm position and fitness
         best_particle = max(self.swarm, key=lambda p: p.my_best_fit)
         best_position = copy.deepcopy(best_particle.my_best_pos)
         best_fintess = best_particle.my_best_fit
-
-        print(f'Time 0/{time} ({self.time}) best fitness {best_fintess}')
+        
+        start_from = 1 if self.jump_start else 2
+        if verbose: 
+            print(f'Time {start_from-1}/{time} ({self.time}) best fitness {best_fintess}')
 
         # optimization loop
-        for t in range(1, time+1):
+        for t in range(start_from, time+1):
             for particle in self.swarm:
                 particle.move(best_position, limit_position, limit_velocity)
                 par_fit = particle.compute_fitness()
@@ -253,42 +264,55 @@ class PSOController:
             self.time += 1
             if verbose:
                 print(f'Time {t}/{time} ({self.time}) best fitness {best_fintess}')
+
+            # logging
             if logger_fc is not None:
-                logger_fc(self)
+                if save_data is not None:
+                    save_data = logger_fc(self, save_data)
+                else:
+                    logger_fc(self)
 
         # returning the best found representation
         best_representation = []
 
         for i in range(len(self.partice_range)):
-            index_position = min(int(best_position[i]), len(self.partice_range[i]))
+            index_position = min(int(best_position[i]), len(self.partice_range[i]) - 1)
             best_representation.append(self.partice_range[i][index_position])
+
+        if save_data is not None:
+            return save_data
 
         return best_representation
 
+# simple test run to optimize quadratic function
 if __name__ == '__main__':
 
-    data_template = {'position': [], 'velocity': [], 'fitness': [], 'time': []}
-    data_df = pd.read_csv('./results/tmpPSO.csv') if os.path.isfile('./results/tmpPSO.csv') else pd.DataFrame(data_template)
+    SAVE_FILE = './results/test/test_PSO.csv'
 
-    def logger_fc(controler):
+    data_template = {'position': [], 'velocity': [], 'representation': [], 'fitness': [], 'time': []}
+    data_df = pd.read_csv(SAVE_FILE) if os.path.isfile(SAVE_FILE) else pd.DataFrame(data_template)
+
+    def logger_fc(controller):
         global data_df
 
         new_data = copy.deepcopy(data_template)
-        for particle in controler.swarm:
+        for particle in controller.swarm:
             new_data['position'].append(particle.position)
             new_data['velocity'].append(particle.velocity)
+            new_data['representation'].append(particle.representation)
             new_data['fitness'].append(particle.current_fit)
-            new_data['time'].append(controler.time)
+            new_data['time'].append(controller.time)
 
         data_df = data_df.append(pd.DataFrame(new_data), ignore_index=True)
 
-    fitness_fc = lambda p: - pow(p.position[0], 2) - pow(p.position[1], 2)
+    fitness_fc = lambda p: - pow(p.representation[0], 2) - pow(p.representation[1], 2)
 
-    controler = PSOController(5, [(-100, 100), (-100, 100)], [1, 1], fitness_fc ,inertia_c=0.8)
+    controler = PSOController(5, [range(-100, 100), range(-100, 100)], [1, 1], fitness_fc ,inertia_c=0.8)
 
     if len(data_df.index) > 0:
         controler.load_from_pd(data_df)
 
-    controler.run(10, logger_fc)
+    print(controler.run(10, logger_fc, verbose=True))
 
-    data_df.to_csv('./results/tmpPSO.csv', index=False)
+    os.makedirs(os.path.dirname(SAVE_FILE), exist_ok=True)
+    data_df.to_csv(SAVE_FILE, index=False)

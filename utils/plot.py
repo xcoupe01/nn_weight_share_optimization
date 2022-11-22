@@ -24,6 +24,8 @@ def plot_alcr(dataframe:pd.DataFrame) -> None:
     sns.set(rc={'figure.figsize': SNS_FIGSIZE})
     plot = sns.scatterplot(data=dataframe, x='compression', y='accuracy loss [%]', hue='acceptable', palette=SNS_PALETTE)
     plot.axhline(ACCEPT_ACCURACY_PER, color='red', alpha=0.2)
+    plot.set_xlim(5, 17)
+    plot.set_ylim(-1, 4)
 
 
 if __name__ == '__main__':

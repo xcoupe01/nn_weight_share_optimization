@@ -1,6 +1,8 @@
+from genetic_config import EvolConfig
 import random
-from utils.genetic.genetic_config import EvolConfig
 import pandas as pd
+import copy
+import os
 
 class Individual:
     def __init__(self, possible_values:list, fitness_fc, chromosome:list=None):
@@ -68,16 +70,26 @@ class GeneticController:
         for indiv in self.population:
             indiv.get_fitness()
 
-    def run_evolution(self, num_generations:int, logger_fc=None, deal_elit=None, verbose:bool=False) -> None:
+    def run(self, num_generations:int, logger_fc=None, save_data:pd.DataFrame=None ,deal_elit=None, verbose:bool=False) -> None:
         """Runs evolution algorithm as inited.
 
         Args:
             num_generations (int): Number of generations to be evaluated.
-            logger_func (function, optionas): funtion that have full acces to controlers data and is meant to log data through
-            the evolution - runned in every generation after the fitness scoring stage. If none, nothing happens. Defaults to None.
-            deal_elit (funtion, optional): TODO - wite docstring
+            logger_fc (function, optional): funtion that have full acces to controlers data and is meant to log data through
+                the evolution - runned in every generation after the fitness scoring stage. If none, nothing happens. Defaults to None.
+            save_data (pd.Dataframe, optional): Dataframe to save data to. If defined, it is expected that the logger_fc
+                takes as parameter this dataframe and returns the updated one. Defaults to None.
+            deal_elit (function, optional): describes what to do with elitist individuals. Defaults to None.
             verbose (bool, optional): If true, some info prints are displayed. Defaults to False.
+
+        Returns:
+            list: the best dound solution
+                or
+            pd.Dataframe: save_data if this parameter is defined at the begining.
         """
+
+        best_chrom = None
+        best_fit = None
 
         for generation in range(0 if self.jump_start else 1, num_generations + 1):
             
@@ -85,8 +97,18 @@ class GeneticController:
                 # score the population
                 self.compute_fitness()
                 self.population.sort(key = lambda x: x.fitness, reverse=True)
+
+                # setting best position
+                if best_fit is None or best_fit < self.population[0].fitness:
+                    best_chrom = copy.deepcopy(self.population[0].chromosome)
+                    best_fit = self.population[0].fitness
+
+                # logging
                 if logger_fc is not None:
-                    logger_fc(self)
+                    if save_data is not None:
+                        save_data = logger_fc(self, save_data)
+                    else:
+                        logger_fc(self)
 
             self.jump_start = False
             
@@ -119,8 +141,18 @@ class GeneticController:
             #mutations
             for indiv in self.population[EvolConfig.NUM_ELITISTS:]:
                 indiv.mutate(EvolConfig.MUTATION_PROBABILITY)
+        
+        if save_data is not None:
+            return save_data
+        
+        return best_chrom
 
     def load_from_pd(self, df:pd.DataFrame) -> None:
+        """Loads the Genetic controller state from a pandas dataframe.
+
+        Args:
+            df (pd.DataFrame): is the dataframe to be loaded from.
+        """
 
         self.generation = df['generation'].max()
         self.jump_start = True
@@ -130,37 +162,35 @@ class GeneticController:
         for i, row in df.iterrows():
             self.population[i].chromosome = eval(row['chromosome'])
             self.population[i].fitness = row['fitness']
-            
-                
 
-#------------------------------------ test temp ------------------------------------
-
-def tmp_fit(x):
-    return random.random()
-
-def tmp_logger(x):
-    print(x.population)
-
+# simple test run to optimize quadratic function
 if __name__ == '__main__':
-    settings = [[1, 40], [2, 40], [2, 40], [2, 40], [2, 40]]
-    tmp = GeneticController(settings, 5, tmp_fit)
 
-    tmp_cmp_chrom = tmp.population[0].chromosome
-    #tmp_cmp_chrom = [1, 2, 3, 4, 5]
+    SAVE_FILE = './results/test/test_GA.csv'
 
-    tmp.run_evolution(3, tmp_logger, verbose=True)
-    
+    data_template = {'generation': [], 'fitness': [], 'chromosome': []}
+    data_df = pd.read_csv(SAVE_FILE) if os.path.isfile(SAVE_FILE) else pd.DataFrame(data_template)
 
-    """print(tmp.data)
-    print(tmp)
+    def logger_fc(controller):
+        global data_df
 
-    print(tmp.data.dtypes)
-    print(tmp_cmp_chrom)"""
+        new_data = copy.deepcopy(data_template)
+        for indiv in controller.population:
 
-    #print(tmp_cmp_chrom in tmp.data['chromosome'].values)
-    #print(tmp_cmp_chrom, tmp.data['chromosome'].values)
+            new_data['generation'].append(controller.generation)
+            new_data['fitness'].append(indiv.fitness)
+            new_data['chromosome'].append(indiv.chromosome)
 
-    #print([1, 2] in [[1, 2], [1, 3]])
+        data_df = data_df.append(pd.DataFrame(new_data), ignore_index=True)
 
-    #print(tmp.data.isin(str(tmp_cmp_chrom)))
-    #print(tmp.data[tmp.data['chromosome'].apply(lambda x : x == tmp_cmp_chrom)].iloc[0]['fitness'])
+    fitness_fc = lambda p: - pow(p.chromosome[0], 2) - pow(p.chromosome[1], 2)
+
+    controler = GeneticController([range(-100, 100), range(-100, 100)], 5, fitness_fc)
+
+    if len(data_df.index) > 0:
+        controler.load_from_pd(data_df)
+
+    print(controler.run(10, logger_fc, verbose=True))
+
+    os.makedirs(os.path.dirname(SAVE_FILE), exist_ok=True)
+    data_df.to_csv(SAVE_FILE, index=False)

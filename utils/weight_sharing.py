@@ -411,7 +411,7 @@ class WeightShare:
 
         # load performances from file
         if savefile is not None and os.path.isfile(savefile):
-            with open('./results/lol.csv', 'r') as f:
+            with open(savefile, 'r') as f:
                 reader = csv.reader(f)
                 for row in reader:
                     perfs.append([])
