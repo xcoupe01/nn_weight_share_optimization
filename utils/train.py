@@ -2,7 +2,7 @@
 
 import torch
 import matplotlib.pyplot as plt
-from os.path import exists
+import os
 import numpy as np
 import time
 import copy
@@ -86,10 +86,11 @@ def train_net(net:torch.nn.Module, criterion, optimizer, dataset, epochs, device
 
 def get_trained(net:torch.nn.Module, path:str, train_args:list) -> None:
 
-    if exists(path):
+    if os.path.exists(path):
         net.load_state_dict(torch.load(path))
         return
 
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     train_net(net, *train_args)
     torch.save(net.state_dict(), path)
 

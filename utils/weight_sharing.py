@@ -424,6 +424,7 @@ class WeightShare:
             perfs = [[[y[0], y[1][0]] for y in x] for x in perfs]
 
         # save performaces if necessary
+        os.makedirs(os.path.dirname(savefile), exist_ok=True)
         if savefile is not None and not os.path.isfile(savefile):
             with open(savefile, 'w') as f:
                 write = csv.writer(f)

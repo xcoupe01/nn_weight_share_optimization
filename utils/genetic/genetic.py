@@ -1,4 +1,4 @@
-from genetic_config import EvolConfig
+from utils.genetic.genetic_config import EvolConfig
 import random
 import pandas as pd
 import copy
