@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import argparse
 
 from data.mnist import MnistDataset
 from models.lenet.lenet import LeNet5
@@ -21,7 +22,7 @@ NET_PATH = './models/lenet/saves/lenet.save'
 RANGE_OPTIMIZATION = True
 RANGE_OPTIMIZATION_TRESHOLD = 0.97
 
-def compress_lenet(compress_alg, search_ranges, num_iter, num_pop):
+def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
 
     # initing the lenet model
     dataset = MnistDataset(BATCH_SIZE, './data', val_split=0.5)
@@ -57,10 +58,25 @@ def compress_lenet(compress_alg, search_ranges, num_iter, num_pop):
     else:
         raise Exception('err')
 
+    # plotting data
+    plot_alcr(save_data)
+    if show_plt:
+        plt.show()
+    if save_plt:
+        plt.savefig(f'results/plots/{compress_alg}.png', format='pdf')
+
 if __name__ == '__main__':
-    compress_lenet('random' ,[range(1, 21), range(1, 21), range(1, 21), range(1, 21), range(1, 21)], 2, 3)
-    print('done')
-    compress_lenet('pso' ,[range(1, 21), range(1, 21), range(1, 21), range(1, 21), range(1, 21)], 2, 3)
-    print('done')
-    compress_lenet('genetic' ,[range(1, 21), range(1, 21), range(1, 21), range(1, 21), range(1, 21)], 2, 3)
-    print('done')
+
+    parser = argparse.ArgumentParser(prog='lenet_compression.py', description='Optimizes compression of LeNet-5 CNN by different algorithms.'+
+    'The outputs are storedn in the results folder.')
+    parser.add_argument('-comp', '--compressor', choices=['random', 'pso', 'genetic'], default='random', help='choose the compression algorithm')
+    parser.add_argument('-pop', '--num_population', metavar='N', type=int, default=12, help='set the population count')
+    parser.add_argument('-its', '--num_iterations', metavar='N', type=int, default=30, help='set the iteration count')
+    parser.add_argument('-up', '--upper_range', metavar='N', type=int, default=21, help='sets the upper range for compression')
+    parser.add_argument('-lo', '--lower_range', metavar='N', type=int, default=1, help='sets the lower range for compression')
+    parser.add_argument('-hp', '--hide', action='store_false', help='shows the output plot')
+    parser.add_argument('-sv', '--save', action='store_true', help='saves the output plot')
+    args = parser.parse_args()
+
+    repr_range = [range(args.lower_range, args.upper_range) for _ in range(5)]
+    compress_lenet(args.compressor, repr_range, args.num_iterations, args.num_population, args.hide, args.save)

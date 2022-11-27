@@ -65,6 +65,7 @@ class Particle :
         self.representation = []
         for i in range(len(self.possible_values)):
             index_position = min(int(self.position[i]), len(self.possible_values[i]) - 1)
+            index_position = max(index_position, 0)
             self.representation.append(self.possible_values[i][index_position])
 
     def __repr__(self) -> str:
@@ -247,23 +248,23 @@ class PSOController:
         # initing best swarm position and fitness
         best_particle = max(self.swarm, key=lambda p: p.my_best_fit)
         best_position = copy.deepcopy(best_particle.my_best_pos)
-        best_fintess = best_particle.my_best_fit
+        best_fitness = best_particle.my_best_fit
         
         start_from = 1 if self.jump_start else 2
         if verbose: 
-            print(f'Time {start_from-1}/{time} ({self.time}) best fitness {best_fintess}')
+            print(f'Time {start_from-1}/{time} ({self.time}) best fitness {best_fitness}')
 
         # optimization loop
         for t in range(start_from, time+1):
             for particle in self.swarm:
                 particle.move(best_position, limit_position, limit_velocity)
                 par_fit = particle.compute_fitness()
-                if par_fit > best_fintess:
-                    best_fintess = par_fit
+                if par_fit > best_fitness:
+                    best_fitness = par_fit
                     best_position = copy.deepcopy(particle.position)
             self.time += 1
             if verbose:
-                print(f'Time {t}/{time} ({self.time}) best fitness {best_fintess}')
+                print(f'Time {t}/{time} ({self.time}) best fitness {best_fitness}')
 
             # logging
             if logger_fc is not None:

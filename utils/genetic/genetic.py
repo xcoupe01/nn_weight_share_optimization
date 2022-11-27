@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../code')
 from utils.genetic.genetic_config import EvolConfig
 import random
 import pandas as pd
