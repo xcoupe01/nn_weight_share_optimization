@@ -2,23 +2,34 @@ import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.cluster import KMeans
-
 import math
 import time
 import copy
 import csv
 import os
 
+from utils.float_prec_reducer import FloatPrecReducer
+
 BITS_IN_BYTE = 8
+FLOAT8_SIGNIFICAND_LEN = 3
 
 class Layer:
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, prec_reducer:FloatPrecReducer=None) -> None:
+        """Inits the Layer object with given values
+
+        Args:
+            name (str): is the name of the layer.
+            prec_reducer (FloatPrecReducer, optional): is the float precision reducer link. Defaults to None.
+        """
+
         self.name = name
         self.weight = None
         self.bias = None
         self.virt_weight_params = 0
         self.virt_bias_params = 0
+        self.prec_reducer = prec_reducer
+        self.elem_size = None
 
     def __repr__(self) -> str:
         return "Layer(" + self.name + ")"
@@ -62,7 +73,7 @@ class Layer:
             for center in cluster_centers:
                 plt.axvline(center, color='r')
 
-    def share_weight(self, n_weights: int, plot: bool=False, assign: bool=False, unlock: bool=True) -> None:
+    def share_weight(self, n_weights: int, plot: bool=False, assign: bool=False, unlock: bool=True, prec_rtype=None) -> None:
         """Runs clustering algorithm to determine the centroinds of given number of clustert, then
         computes the correct weight tensor for the network.
 
@@ -91,10 +102,15 @@ class Layer:
         
         if plot:
             self.plot_weight(kmeans.cluster_centers_)
+        
+        # precision reduction if possible
+        processed_cluster_centers = kmeans.cluster_centers_
+        if self.prec_reducer is not None and prec_rtype is not None:
+            processed_cluster_centers = self.prec_reducer.reduce_list(processed_cluster_centers, prec_rtype)
 
         if assign:
             # assigning and locking the new shared tensor
-            new_tensor = [kmeans.cluster_centers_[i][0] for i in kmeans.labels_]
+            new_tensor = [processed_cluster_centers[i][0] for i in kmeans.labels_]
             new_tensor = torch.tensor(new_tensor)
             new_tensor = new_tensor.reshape(original_shape)
 
@@ -105,17 +121,21 @@ class Layer:
             self.weight.requires_grad = unlock
             self.virt_weight_params = n_weights
 
+            if self.prec_reducer is not None and prec_rtype is not None:
+                self.elem_size = self.prec_reducer.get_prec_bytes(prec_rtype)
+
     def compression_rate(self, mapping_bits:int=None) -> float:
         """Computes compression rate of the layer by following expression:
 
         par: num of params in the weight tensor
         bits1: amount of bits required to store the original value
+        bits1r: amoutn of bits required to store the original reduced value
         bits2: amount of bits required to store the share value
         key: amount of unique shared values 
         
                   par * bits1
         -----------------------------------
-        par * bits2 + key * (bits1 + bits2)
+        par * bits2 + key * (bits1r + bits2)
 
         Args:
             mapping_bits (int, optional): Sets the number of bits wanted to be used
@@ -135,6 +155,7 @@ class Layer:
 
         par = self.weight.numel()
         bits1 = self.weight.element_size() * BITS_IN_BYTE
+        bits1r = self.elem_size * BITS_IN_BYTE if self.elem_size is not None else bits1
         
         # computing number of bits to represent the key to map
         # in case there is only one unique value, the expression gives 0
@@ -150,19 +171,31 @@ class Layer:
         bits_map_key = par * bits2
 
         # computing the weight mapping table 
-        bits_map_vals = self.virt_weight_params * (bits1 + bits2)
+        bits_map_vals = self.virt_weight_params * (bits1r + bits2)
 
         return (par * bits1) / (bits_map_key + bits_map_vals)
 
 class WeightShare:
 
     def __init__(self, model: torch.nn.Module, opt_create, train, test) -> None:
+        """Initializes the weight share object.
+
+        Args:
+            model (torch.nn.Module): is the mode thats going to be weight-shared.
+            opt_create (function): is a function that returns new optimizer for the given network.
+            train (function): is a function that trains the given network.
+            test (function): is a function that tests the given network.
+
+        Raises:
+            Exception: if unknown net parameter is found.
+        """
 
         self.model = model
         self.model_layers:list[Layer] = []
         self.opt_create = opt_create
         self.train = train
         self.test = test
+        self.float_res_reducer = FloatPrecReducer(FLOAT8_SIGNIFICAND_LEN)
 
         # initing the internal representation of the layers
         for name, param in model.named_parameters():
@@ -176,7 +209,7 @@ class WeightShare:
                 layer = None
 
             if layer is None:
-                self.model_layers.append(Layer(".".join(parsed_name[:-1])))
+                self.model_layers.append(Layer(".".join(parsed_name[:-1]), self.float_res_reducer))
                 layer = self.model_layers[-1]
 
             if parsed_name[-1] == 'weight':
@@ -219,7 +252,7 @@ class WeightShare:
         layer_cr = [x.compression_rate(mapping_bits) for x in self.model_layers]
         return sum(layer_cr) / len(layer_cr)
 
-    def share(self, layer_clusters: list, layer_order: list, retrain_amount: list, verbose:bool=False) -> dict:
+    def share(self, layer_clusters: list, layer_order: list, retrain_amount: list, prec_reduct:list = None, verbose:bool=False) -> dict:
         """Shares the entire model in a given orger to a given number of weight clusters for each layer
         and retrains the model by a given amount.
 
@@ -230,6 +263,8 @@ class WeightShare:
             format is that the list has the indexes of layers in order to be shared.
             retrain_amount (list): specifies the retrain amount - the index of the retrain amount corresponds to the
             layer to be retrained.
+            prec_rtype (list, optional): If not None, it defines the float precision reduction type for each layer
+            (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
             verbose (bool, optional): To print information about the sharing during the execution. Defaults to False.
 
         Raises:
@@ -247,6 +282,7 @@ class WeightShare:
         """
 
         if len(layer_clusters) != len(retrain_amount) or \
+            prec_reduct is not None and len(prec_reduct) != len(retrain_amount) or \
             len(retrain_amount) != len(self.model_layers) or \
             max(layer_order) >= len(self.model_layers) or \
             min(layer_order) < 0 or\
@@ -254,6 +290,7 @@ class WeightShare:
 
             print(
                 len(layer_clusters) != len(retrain_amount),
+                prec_reduct is not None and len(prec_reduct) != len(retrain_amount),
                 len(retrain_amount) != len(self.model_layers),
                 max(layer_order) >= len(self.model_layers),
                 min(layer_order) < 0,
@@ -262,8 +299,12 @@ class WeightShare:
             print(layer_clusters)
             print(layer_order)
             print(retrain_amount)
+            print(prec_reduct)
 
             raise Exception('WeightShare share error - lists not matching')
+
+        if prec_reduct == None:
+            prec_reduct = [None for _ in layer_order]
 
         total_share = 0
         total_train = 0
@@ -276,7 +317,7 @@ class WeightShare:
 
             # layer share phase
             start_share = time.time()
-            self.model_layers[layer].share_weight(layer_clusters[layer], assign=True, unlock=False)
+            self.model_layers[layer].share_weight(layer_clusters[layer], assign=True, unlock=False, prec_rtype=prec_reduct[layer])
             total_share += time.time() - start_share
 
             # retrain phase
@@ -314,7 +355,12 @@ class WeightShare:
             }
         }
 
-    def get_layer_cluster_nums_perf(self, layer_i:int, layer_range:list, perf_fcs:list, pre_perf_fc = None) -> list:
+    def reset(self):
+        for layer in self.model_layers:
+            layer.elem_size = None
+            layer.weight.requires_grad = True
+
+    def get_layer_cluster_nums_perf(self, layer_i:int, layer_range:list, perf_fcs:list, pre_perf_fc = None, prec_rtype=None) -> list:
         """Gets layer cluster performace for a given set of cluster numbers. After executing
         the model is returned to original state.
 
@@ -324,6 +370,8 @@ class WeightShare:
             perf_fcs (list): are functions that will test the performace.
             pre_perf_fc (function, optional): is a function that is performed before the test.
             It recieves the model layer after sharing. Defaults to None.
+            prec_rtype (str, optional): If not None, it defines the float precision reduction type 
+            (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
 
         Raises:
             Exception: if the layer is already locked, error is raised.
@@ -344,7 +392,7 @@ class WeightShare:
         for k in layer_range:
             
             # clustering and scoring the solution
-            self.model_layers[layer_i].share_weight(k, assign=True, unlock=False)
+            self.model_layers[layer_i].share_weight(k, assign=True, unlock=False, prec_rtype=prec_rtype)
             if pre_perf_fc is not None:
                 pre_perf_fc(self.model_layers[layer_i])
             k_score = [x(self.model_layers[layer_i]) for x in perf_fcs]
@@ -354,10 +402,11 @@ class WeightShare:
             self.model.load_state_dict(copy.deepcopy(original_model_params))
             self.model_layers[layer_i].virt_weight_params = original_virt_weight_params
             self.model_layers[layer_i].weight.requires_grad = True
+            self.model_layers[layer_i].elem_size = None
 
         return output
 
-    def get_layers_cluster_nums_perfs(self, layer_ranges:list, perf_fcs, pre_perf_fc = None) -> list:
+    def get_layers_cluster_nums_perfs(self, layer_ranges:list, perf_fcs, pre_perf_fc = None, prec_rtype=None) -> list:
         """Gets all the layers cluster performace for a given set of cluster numbers. After executing
         the model is returned to original state.
 
@@ -367,6 +416,8 @@ class WeightShare:
             perf_fcs (_type_): are functions that will test the performace.
             pre_perf_fc (_type_, optional): is a function that is performed before the test.
             It recieves the model layer after sharing. Defaults to None.
+            prec_rtype (str, optional): If not None, it defines the float precision reduction type 
+            (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
 
         Raises:
             Exception: When the layer_ranges do not correspond to the model layers as described an exception is raised.
@@ -381,12 +432,12 @@ class WeightShare:
         layer_perfs = []
 
         for i in range(len(self.model_layers)):
-            layer_perfs.append(self.get_layer_cluster_nums_perf(i, layer_ranges[i], perf_fcs, pre_perf_fc))
+            layer_perfs.append(self.get_layer_cluster_nums_perf(i, layer_ranges[i], perf_fcs, pre_perf_fc, prec_rtype=prec_rtype))
 
         return layer_perfs
 
     def get_optimized_layer_ranges(self, layer_ranges:list, perf_fc, perf_lim:float = None, 
-    max_num_range:int = None, savefile:str = None, pre_perf_fc = None) -> list:
+    max_num_range:int = None, savefile:str = None, pre_perf_fc = None, prec_rtype=None) -> list:
         """Gets the oprimized clusters nubers for every layer of the model by given metrics.
         The metrics can be that the model with applied clusters number accuracy cant
         get below certain number and/or the number of clusters number can be limited
@@ -401,6 +452,8 @@ class WeightShare:
             savefile (str, optional): is a savefile to be loaded from or saved to. Defaults to None.
             pre_perf_fc (function, optional): is a function that is performed before the test.
             It recieves the model layer after sharing. Defaults to None.
+            prec_rtype (str, optional): If not None, it defines the float precision reduction type 
+            (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
 
         Returns:
             list: a list where an index corresponds to a given layer. Each index contains a list of optimized
@@ -420,7 +473,7 @@ class WeightShare:
         
         # compute performances if file not avalible
         else:
-            perfs = self.get_layers_cluster_nums_perfs(layer_ranges, [perf_fc], pre_perf_fc)
+            perfs = self.get_layers_cluster_nums_perfs(layer_ranges, [perf_fc], pre_perf_fc, prec_rtype=prec_rtype)
             perfs = [[[y[0], y[1][0]] for y in x] for x in perfs]
 
         # save performaces if necessary

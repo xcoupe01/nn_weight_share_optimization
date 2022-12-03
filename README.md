@@ -7,5 +7,9 @@ Algorithms implemented yet:
 - particle swarm optimization
 - random search
 
-Nets tryed:
+Implemented:
+- layer-wise search space optimization
+- float precision reduction
+
+Nets tried:
 - LeNet-5

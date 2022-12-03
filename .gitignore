@@ -5,6 +5,7 @@ models/*/saves
 data/MNIST
 data/oxford-iiit-pet
 quant_tests/*.data
+.vscode
 
 
 # Python ignores
