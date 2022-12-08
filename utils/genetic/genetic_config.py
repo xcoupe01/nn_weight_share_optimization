@@ -7,7 +7,7 @@ class EvolConfig:
     PAIRING_ALGORITHM = lambda list_indivs, num_pairs : pair_rulette(list_indivs, num_pairs)    # Set pairing algorithm
     CROSSOVER_ALGORITHM = lambda pair : breed_single_point_crossover(pair)                      # Set crossover algorithm
     MUTATION_ALGORITHM = lambda indiv, p : mutation_prob_for_each(indiv, p)                     # Set mutation algorithm
-    MUTATION_PROBABILITY = 0.4                                                                  # Set mutation probability (depends also on used alg)
+    MUTATION_PROBABILITY = 0.2                                                                  # Set mutation probability (depends also on used alg)
     NUM_ELITISTS = 1                                                                            # Set the number of elitist chromosomes
 
 # -------------- breeding functions --------------

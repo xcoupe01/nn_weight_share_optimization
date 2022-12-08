@@ -11,7 +11,8 @@ class CompressConfig:
     VERBOSE = True
     SHARE_ORDER = [0, 1, 2, 3, 4]
     RETRAIN_AMOUNT = [0, 0, 0, 0, 0]
-    PRECISION_REDUCTION = ['f4', 'f4', 'f4', 'f4', 'f4']
+    PRECISION_REDUCTION = None #['f4', 'f4', 'f4', 'f4', 'f4']
+    DEVICE = 'cpu'
 
     # genetic config
     EVOL_SAVE_FILE = './results/lenet_GA_save.csv'
@@ -97,7 +98,8 @@ def fitness_fc(individual, model:nn.Module, train_settings:list, ws_controller:W
     repres = individual.chromosome if hasattr(individual, 'chromosome') else individual.representation
 
     # share weigts by chromosome
-    individual.data = ws_controller.share(repres, CompressConfig.SHARE_ORDER, CompressConfig.RETRAIN_AMOUNT, CompressConfig.PRECISION_REDUCTION)
+    individual.data = ws_controller.share(repres, CompressConfig.SHARE_ORDER, CompressConfig.RETRAIN_AMOUNT, 
+        prec_reduct=CompressConfig.PRECISION_REDUCTION, device=CompressConfig.DEVICE)
 
     # compute fitness
     if individual.data['accuracy'] <= 0.95:

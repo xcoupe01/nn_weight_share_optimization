@@ -84,10 +84,10 @@ def train_net(net:torch.nn.Module, criterion, optimizer, dataset, epochs, device
         
         #return optimizer, (train_losses, valid_losses), test_acc
 
-def get_trained(net:torch.nn.Module, path:str, train_args:list) -> None:
+def get_trained(net:torch.nn.Module, path:str, train_args:list, device:str='cpu') -> None:
 
     if os.path.exists(path):
-        net.load_state_dict(torch.load(path))
+        net.load_state_dict(torch.load(path, map_location=device))
         return
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -144,7 +144,7 @@ def get_accuracy(net:torch.nn.Module, data_loader, device):
                 n += y_true.size(0)
                 correct_pred += (predicted_labels == y_true).sum()
 
-        return correct_pred.numpy() / n
+        return correct_pred.cpu().numpy() / n
 
 
 def validate(net:torch.nn.Module, valid_loader, criterion, device):

@@ -73,7 +73,7 @@ class Layer:
             for center in cluster_centers:
                 plt.axvline(center, color='r')
 
-    def share_weight(self, n_weights: int, plot: bool=False, assign: bool=False, unlock: bool=True, prec_rtype=None) -> None:
+    def share_weight(self, n_weights: int, plot: bool=False, assign: bool=False, unlock: bool=True, prec_rtype:str=None, device:str='cpu') -> None:
         """Runs clustering algorithm to determine the centroinds of given number of clustert, then
         computes the correct weight tensor for the network.
 
@@ -82,11 +82,15 @@ class Layer:
             plot (bool, optional): if true, the new weight tensor is plotted. Defaults to False.
             assign (bool, optional): If true the new weight is assgined to the network. Defaults to False.
             unlock (bool, optional): If true, the new weights are set as unlocked in the model. Defaults to True.
+            prec_rtype (string, optional): If not None, it defines the float precision reduction type
+            (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None. 
+            device (string, optional): Tells the device where the net is. Defaults to 'cpu'.
+
 
         Raises:
             Exception: If the shaing is runned after locking the last sharing, then an error is raised.
         """
-        
+
         if not self.weight.requires_grad:
             raise Exception('Layer share_weight error - already locked')
         
@@ -111,7 +115,7 @@ class Layer:
         if assign:
             # assigning and locking the new shared tensor
             new_tensor = [processed_cluster_centers[i][0] for i in kmeans.labels_]
-            new_tensor = torch.tensor(new_tensor)
+            new_tensor = torch.tensor(new_tensor).to(device)
             new_tensor = new_tensor.reshape(original_shape)
 
             if new_tensor.dtype != original_type:
@@ -252,7 +256,7 @@ class WeightShare:
         layer_cr = [x.compression_rate(mapping_bits) for x in self.model_layers]
         return sum(layer_cr) / len(layer_cr)
 
-    def share(self, layer_clusters: list, layer_order: list, retrain_amount: list, prec_reduct:list = None, verbose:bool=False) -> dict:
+    def share(self, layer_clusters: list, layer_order: list, retrain_amount: list, prec_reduct:list = None, verbose:bool=False, device:str='cpu') -> dict:
         """Shares the entire model in a given orger to a given number of weight clusters for each layer
         and retrains the model by a given amount.
 
@@ -266,6 +270,7 @@ class WeightShare:
             prec_rtype (list, optional): If not None, it defines the float precision reduction type for each layer
             (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
             verbose (bool, optional): To print information about the sharing during the execution. Defaults to False.
+            device (str, optional): Tells the device where the net is. Defaults to 'cpu'.
 
         Raises:
             Exception: if the input parameters are bad (lists do not correspond).
@@ -317,7 +322,7 @@ class WeightShare:
 
             # layer share phase
             start_share = time.time()
-            self.model_layers[layer].share_weight(layer_clusters[layer], assign=True, unlock=False, prec_rtype=prec_reduct[layer])
+            self.model_layers[layer].share_weight(layer_clusters[layer], assign=True, unlock=False, prec_rtype=prec_reduct[layer], device=device)
             total_share += time.time() - start_share
 
             # retrain phase
@@ -355,12 +360,15 @@ class WeightShare:
             }
         }
 
-    def reset(self):
+    def reset(self) -> None:
+        """Resets the weight share internal representation.
+        It does not reset the net!!!
+        """
         for layer in self.model_layers:
             layer.elem_size = None
             layer.weight.requires_grad = True
 
-    def get_layer_cluster_nums_perf(self, layer_i:int, layer_range:list, perf_fcs:list, pre_perf_fc = None, prec_rtype=None) -> list:
+    def get_layer_cluster_nums_perf(self, layer_i:int, layer_range:list, perf_fcs:list, pre_perf_fc=None, prec_rtype:str=None, device:str='cpu') -> list:
         """Gets layer cluster performace for a given set of cluster numbers. After executing
         the model is returned to original state.
 
@@ -372,6 +380,7 @@ class WeightShare:
             It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
             (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
+            device (str, optional): Tells the device where the net is. Defaults to 'cpu'.
 
         Raises:
             Exception: if the layer is already locked, error is raised.
@@ -392,7 +401,7 @@ class WeightShare:
         for k in layer_range:
             
             # clustering and scoring the solution
-            self.model_layers[layer_i].share_weight(k, assign=True, unlock=False, prec_rtype=prec_rtype)
+            self.model_layers[layer_i].share_weight(k, assign=True, unlock=False, prec_rtype=prec_rtype, device=device)
             if pre_perf_fc is not None:
                 pre_perf_fc(self.model_layers[layer_i])
             k_score = [x(self.model_layers[layer_i]) for x in perf_fcs]
@@ -406,7 +415,7 @@ class WeightShare:
 
         return output
 
-    def get_layers_cluster_nums_perfs(self, layer_ranges:list, perf_fcs, pre_perf_fc = None, prec_rtype=None) -> list:
+    def get_layers_cluster_nums_perfs(self, layer_ranges:list, perf_fcs, pre_perf_fc=None, prec_rtype:str=None, device:str='cpu') -> list:
         """Gets all the layers cluster performace for a given set of cluster numbers. After executing
         the model is returned to original state.
 
@@ -418,6 +427,7 @@ class WeightShare:
             It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
             (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
+            device (str, optional): Tells the device where the net is. Defaults to 'cpu'.
 
         Raises:
             Exception: When the layer_ranges do not correspond to the model layers as described an exception is raised.
@@ -432,12 +442,12 @@ class WeightShare:
         layer_perfs = []
 
         for i in range(len(self.model_layers)):
-            layer_perfs.append(self.get_layer_cluster_nums_perf(i, layer_ranges[i], perf_fcs, pre_perf_fc, prec_rtype=prec_rtype))
+            layer_perfs.append(self.get_layer_cluster_nums_perf(i, layer_ranges[i], perf_fcs, pre_perf_fc, prec_rtype=prec_rtype, device=device))
 
         return layer_perfs
 
-    def get_optimized_layer_ranges(self, layer_ranges:list, perf_fc, perf_lim:float = None, 
-    max_num_range:int = None, savefile:str = None, pre_perf_fc = None, prec_rtype=None) -> list:
+    def get_optimized_layer_ranges(self, layer_ranges:list, perf_fc, perf_lim:float=None, 
+    max_num_range:int=None, savefile:str=None, pre_perf_fc=None, prec_rtype:str=None, device:str='cpu') -> list:
         """Gets the oprimized clusters nubers for every layer of the model by given metrics.
         The metrics can be that the model with applied clusters number accuracy cant
         get below certain number and/or the number of clusters number can be limited
@@ -454,6 +464,7 @@ class WeightShare:
             It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
             (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
+            device (str, optional): Tells the device where the net is. Defaults to 'cpu'.
 
         Returns:
             list: a list where an index corresponds to a given layer. Each index contains a list of optimized
@@ -473,7 +484,7 @@ class WeightShare:
         
         # compute performances if file not avalible
         else:
-            perfs = self.get_layers_cluster_nums_perfs(layer_ranges, [perf_fc], pre_perf_fc, prec_rtype=prec_rtype)
+            perfs = self.get_layers_cluster_nums_perfs(layer_ranges, [perf_fc], pre_perf_fc, prec_rtype=prec_rtype, device=device)
             perfs = [[[y[0], y[1][0]] for y in x] for x in perfs]
 
         # save performaces if necessary
