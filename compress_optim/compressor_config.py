@@ -39,10 +39,11 @@ class CompressConfig:
     }
 
     # pso config
-    PSO_PARTICLE_MAX_VELOCITY = [2.5 for _ in range(5)]
+    PSO_PARTICLE_MAX_VELOCITY = [4 for _ in range(5)]
     PSO_SAVE_FILE = './results/lenet_PSO_save.csv'
     PSO_LIMIT_VELOCITY = True
     PSO_LIMIT_POSITION = True
+    PSO_INERTIA = 0.8
     PSO_DATA = {
         'time': [],
         'fitness': [],

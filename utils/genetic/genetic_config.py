@@ -71,7 +71,7 @@ def pair_rulette(individuals:list, num_pairs:int) -> list:
 
 # -------------- pairing functions --------------
 
-def breed_single_point_crossover(pair:list) -> None:
+def breed_single_point_crossover(pair:list) -> list:
     """Breeding algorithm - single point crossover.
     One point in the pairings chromosomes are chosen and
     the parts after the point the chromosome values
@@ -90,7 +90,42 @@ def breed_single_point_crossover(pair:list) -> None:
     new_chromosome1 = pair[0].chromosome[:breed_index] + pair[1].chromosome[breed_index:]
     new_chromosome2 = pair[1].chromosome[:breed_index] + pair[0].chromosome[breed_index:]
 
-    # chreating new individuals
+    # creating new individuals
+    return [new_chromosome1, new_chromosome2]
+
+def breed_uniform(pair:list) -> list:
+    """Breeding algorthm - uniform crossover.
+    List is being generated where item on each index
+    tells if the child should have corresponding chromosome
+    list item from parent 0 or parent 1. The other child
+    is the oposite. The breed list is chosen randomly.
+
+    Args:
+        pair (list): a pair of Individual objects to be breeded
+
+    Raises:
+        Exception: when the function fails to find the breed list.
+
+    Returns:
+        list: list of new chromosomes
+    """
+    
+    # breed split list
+    breed_list = random.choices([True, False], k=len(pair[0].chromosome))
+    
+    # ensuring optimal breed split list
+    run = 0
+    while all(breed_list) or not any(breed_list):
+        run += 1
+        breed_list = random.choices([True, False], k=len(pair[0].chromosome))
+        if run >= RUN_CELLING:
+            raise Exception('breed_uniform error - cannot create breed list')
+
+    # creating new chromosomes
+    new_chromosome1 = [pair[0].chromosome[x] if breed_list[x] else pair[1].chromosome[x] for x in range(len(pair[0].chromosome))]
+    new_chromosome2 = [pair[1].chromosome[x] if breed_list[x] else pair[0].chromosome[x] for x in range(len(pair[0].chromosome))]
+
+    # creating new individuals
     return [new_chromosome1, new_chromosome2]
 
 # -------------- mutation functions --------------
@@ -109,4 +144,3 @@ def mutation_prob_for_each(individual, p:float) -> None:
     for i in range(len(individual.chromosome)):
         if random.random() <= p:
             individual.chromosome[i] = random.choice(individual.possible_values[i])
-

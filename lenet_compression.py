@@ -21,6 +21,7 @@ NET_PATH = './models/lenet/saves/lenet.save'
 # optimization settings
 RANGE_OPTIMIZATION = True
 RANGE_OPTIMIZATION_TRESHOLD = 0.97
+RANGE_OPTIMIZATION_FILE = './results/lenet-layer-perf.save'
 
 def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
 
@@ -45,7 +46,7 @@ def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:i
     lam_test_inp = lambda _ : get_accuracy(model, dataset.test_dl, DEVICE)
     if RANGE_OPTIMIZATION:
         search_ranges = ws_controller.get_optimized_layer_ranges(search_ranges, lam_test_inp, 
-            RANGE_OPTIMIZATION_TRESHOLD, savefile='./results/lenet-layer-perf.save')
+            RANGE_OPTIMIZATION_TRESHOLD, savefile=RANGE_OPTIMIZATION_FILE)
 
     # compression part
     save_data = None
@@ -72,7 +73,7 @@ if __name__ == '__main__':
     parser.add_argument('-comp', '--compressor', choices=['random', 'pso', 'genetic'], default='random', help='choose the compression algorithm')
     parser.add_argument('-pop', '--num_population', metavar='N', type=int, default=12, help='set the population count')
     parser.add_argument('-its', '--num_iterations', metavar='N', type=int, default=30, help='set the iteration count')
-    parser.add_argument('-up', '--upper_range', metavar='N', type=int, default=21, help='sets the upper range for compression')
+    parser.add_argument('-up', '--upper_range', metavar='N', type=int, default=51, help='sets the upper range for compression')
     parser.add_argument('-lo', '--lower_range', metavar='N', type=int, default=1, help='sets the lower range for compression')
     parser.add_argument('-hp', '--hide', action='store_false', help='shows the output plot')
     parser.add_argument('-sv', '--save', action='store_true', help='saves the output plot')

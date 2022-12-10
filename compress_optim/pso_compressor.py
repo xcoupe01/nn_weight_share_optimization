@@ -44,7 +44,7 @@ def compression_pso_optim(num_iterations:int, num_particles:int, ranges:list, be
     # initing pso
     lam_fit = lambda individual : fitness_fc(individual, model, train_settings, ws_controller, net_path)
     lam_log = lambda pso_cont, save_data : logger_fc(pso_cont, before_loss, save_data)
-    pso = PSOController(num_particles, ranges, CompressConfig.PSO_PARTICLE_MAX_VELOCITY, lam_fit, 0.6)
+    pso = PSOController(num_particles, ranges, CompressConfig.PSO_PARTICLE_MAX_VELOCITY, lam_fit, CompressConfig.PSO_INERTIA)
 
     # loading if possible
     if save_data is not None and save_data.size != 0:
