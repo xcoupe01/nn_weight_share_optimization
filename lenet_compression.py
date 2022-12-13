@@ -14,14 +14,14 @@ from compress_optim import *
 LEARNING_RATE = 0.0001
 BATCH_SIZE = 32
 N_CLASSES = 10
-DEVICE = None
 EPOCHS = 100
+DEVICE = CompressConfig.DEVICE
 # net save path
 NET_PATH = './models/lenet/saves/lenet.save'
 # optimization settings
 RANGE_OPTIMIZATION = True
 RANGE_OPTIMIZATION_TRESHOLD = 0.97
-RANGE_OPTIMIZATION_FILE = './results/lenet-layer-perf.save'
+RANGE_OPTIMIZATION_FILE = './results/lenet-layer-perf.csv'
 
 def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
 
@@ -46,7 +46,7 @@ def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:i
     lam_test_inp = lambda _ : get_accuracy(model, dataset.test_dl, DEVICE)
     if RANGE_OPTIMIZATION:
         search_ranges = ws_controller.get_optimized_layer_ranges(search_ranges, lam_test_inp, 
-            RANGE_OPTIMIZATION_TRESHOLD, savefile=RANGE_OPTIMIZATION_FILE)
+            RANGE_OPTIMIZATION_TRESHOLD, savefile=RANGE_OPTIMIZATION_FILE, device=DEVICE)
 
     # compression part
     save_data = None
@@ -75,7 +75,7 @@ if __name__ == '__main__':
     parser.add_argument('-its', '--num_iterations', metavar='N', type=int, default=30, help='set the iteration count')
     parser.add_argument('-up', '--upper_range', metavar='N', type=int, default=51, help='sets the upper range for compression')
     parser.add_argument('-lo', '--lower_range', metavar='N', type=int, default=1, help='sets the lower range for compression')
-    parser.add_argument('-hp', '--hide', action='store_false', help='shows the output plot')
+    parser.add_argument('-hp', '--hide', action='store_false', help='does not show the output plot')
     parser.add_argument('-sv', '--save', action='store_true', help='saves the output plot')
     args = parser.parse_args()
 

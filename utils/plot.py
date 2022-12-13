@@ -13,7 +13,7 @@ def plot_alncl(dataframe:pd.DataFrame) -> None:
     sns.set(rc={'figure.figsize': SNS_FIGSIZE})
     sns.scatterplot(data=dataframe, x='num clusters', y='accuracy loss', hue='layer', palette=SNS_PALETTE)
 
-def plot_alcr(dataframe:pd.DataFrame) -> None:
+def plot_alcr(dataframe:pd.DataFrame, acceptable_division:bool=True) -> None:
     # accuracy loss, compression rate plot
 
     ACCEPT_ACCURACY_PER = 1
@@ -22,10 +22,65 @@ def plot_alcr(dataframe:pd.DataFrame) -> None:
     dataframe['acceptable'] = np.where(dataframe['accuracy_loss'] < ACCEPT_ACCURACY_PER * 0.01, 'passed', 'failed')
     dataframe['accuracy loss [%]'] = dataframe['accuracy_loss'] * 100
     sns.set(rc={'figure.figsize': SNS_FIGSIZE})
-    plot = sns.scatterplot(data=dataframe, x='compression', y='accuracy loss [%]', hue='acceptable', palette=SNS_PALETTE)
-    plot.axhline(ACCEPT_ACCURACY_PER, color='red', alpha=0.2)
+
+    plot = None
+    if acceptable_division:
+        plot = sns.scatterplot(data=dataframe, x='compression', y='accuracy loss [%]', hue='acceptable', palette=SNS_PALETTE)
+        plot.axhline(ACCEPT_ACCURACY_PER, color='red', alpha=0.2)
+    else:
+        plot = sns.scatterplot(data=dataframe, x='compression', y='accuracy loss [%]', palette=SNS_PALETTE)
     plot.set_xlim(5, 17)
     plot.set_ylim(-1, 4)
+
+def plot_optimalization_progress(files:dict):
+
+    data = {}
+
+    iter_col_name = {
+        'PSO': 'time',
+        'GA': 'generation',
+        'RND': None,
+    }
+
+    for key in files.keys():
+        if key not in data.keys():
+            data[key] = []
+        for file in files[key]:
+            df = pd.read_csv(file)
+            if iter_col_name[key] is not None:
+                df = df.groupby(iter_col_name[key]).max().reset_index()
+                data[key].append(df[['fitness', iter_col_name[key]]])
+            else:
+                df = df.groupby(df.index // 20).max().reset_index()
+                df['index'] = df.index
+                data[key].append(df[['fitness', 'index']])
+        data[key] = pd.concat(data[key], axis=0, ignore_index=True)
+    
+    plt.figure(figsize=(15, 10))
+    plt.rc('font', size=10)
+
+    prop_cycle = plt.rcParams['axes.prop_cycle']
+    colors = prop_cycle.by_key()['color']
+
+    for index, key in enumerate(data.keys()):
+        optim_group = None
+
+        if iter_col_name[key] is not None:
+            optim_group = data[key].groupby(iter_col_name[key])
+        else:
+            optim_group = data[key].groupby('index')
+
+        optim_max = optim_group.max().reset_index()
+        optim_mean = optim_group.mean().reset_index() # could be median
+        optim_min = optim_group.min().reset_index()
+
+        plt.subplot(1, len(data), index+1)
+        plt.plot(range(len(optim_mean['fitness'])), optim_mean['fitness'], color=colors[index])
+        plt.fill_between(range(len(optim_mean['fitness'])), optim_max['fitness'], optim_min['fitness'], color=colors[index], alpha=0.4)
+        plt.ylim([0, 5])
+        plt.title(key)
+        plt.xlabel('iterace')
+        plt.ylabel('fitness')
 
 
 if __name__ == '__main__':
