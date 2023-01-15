@@ -115,6 +115,7 @@ def plot_losses(train_losses:list, valid_losses:list):
             ylabel='Loss') 
     ax.legend()
     # fig.show()
+    fig.savefig('lenet_tanh_train.pdf')
     
     # change the plot style to default
     plt.style.use('default')

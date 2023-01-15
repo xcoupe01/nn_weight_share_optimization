@@ -134,7 +134,7 @@ class Layer:
         par: num of params in the weight tensor
         bits1: amount of bits required to store the original value
         bits1r: amoutn of bits required to store the original reduced value
-        bits2: amount of bits required to store the share value
+        bits2: amount of bits required to store the share value (key)
         key: amount of unique shared values 
         
                   par * bits1

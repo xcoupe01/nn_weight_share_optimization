@@ -17,11 +17,11 @@ N_CLASSES = 10
 EPOCHS = 100
 DEVICE = CompressConfig.DEVICE
 # net save path
-NET_PATH = './models/lenet/saves/lenet.save'
+NET_PATH = './models/lenet/saves/lenet_tanh.save'
 # optimization settings
 RANGE_OPTIMIZATION = True
 RANGE_OPTIMIZATION_TRESHOLD = 0.97
-RANGE_OPTIMIZATION_FILE = './results/lenet-layer-perf.csv'
+RANGE_OPTIMIZATION_FILE = './results/lenet-tanh-layer-perf.csv'
 
 def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
 

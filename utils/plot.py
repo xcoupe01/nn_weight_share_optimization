@@ -29,7 +29,7 @@ def plot_alcr(dataframe:pd.DataFrame, acceptable_division:bool=True) -> None:
         plot.axhline(ACCEPT_ACCURACY_PER, color='red', alpha=0.2)
     else:
         plot = sns.scatterplot(data=dataframe, x='compression', y='accuracy loss [%]', palette=SNS_PALETTE)
-    plot.set_xlim(5, 17)
+    plot.set_xlim(5, 20)
     plot.set_ylim(-1, 4)
 
 def plot_optimalization_progress(files:dict):
@@ -77,7 +77,7 @@ def plot_optimalization_progress(files:dict):
         plt.subplot(1, len(data), index+1)
         plt.plot(range(len(optim_mean['fitness'])), optim_mean['fitness'], color=colors[index])
         plt.fill_between(range(len(optim_mean['fitness'])), optim_max['fitness'], optim_min['fitness'], color=colors[index], alpha=0.4)
-        plt.ylim([0, 5])
+        plt.ylim([0, 7])
         plt.title(key)
         plt.xlabel('iterace')
         plt.ylabel('fitness')
