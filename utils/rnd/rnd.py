@@ -1,20 +1,20 @@
+import sys
+sys.path.append('../code')
 import random
 import pandas as pd
 import os
 import copy
+from utils.fitness_controller import FitnessController
 
 class Individual:
-    def __init__(self, possible_values:list, fitness_fc) -> None:
+    def __init__(self, possible_values:list) -> None:
         """Inits the individual for random search.
 
         Args:
             possible_values (list): Defines the possible position ranges. Each index of list corresponds to its dimension.
                 Each item on index is expected to be range of possible values in given dimension.
-            fitness_fc (function): Defines the fitness function of the individual. The function sould compute one float number, its
-                input is the individual.
         """
         self.representation = []
-        self.fitness_fc = fitness_fc
         self.fitness = None
         self.data = None
 
@@ -29,28 +29,17 @@ class Individual:
         """
         return f'Individual ({self.representation}) fit:{self.fitness}'
 
-    def get_fitness(self) -> float:
-        """Computes fitness based on the init.
-
-        Returns:
-            float: the fitness value of this individual.
-        """
-        if self.fitness is None:
-            self.fitness = self.fitness_fc(self)
-        return self.fitness
-
 class RandomController:
-    def __init__(self, individual_type:list, fitness_fc) -> None:
+    def __init__(self, individual_type:list, fitness_cont:FitnessController) -> None:
         """Inits the Random Search Controller.
 
         Args:
             individual_type (list): Defines the possible position ranges. Each index of list corresponds to its dimension.
                 Each item on index is expected to be range of possible values in given dimension.
-            fitness_fc (function): Defines the fitness function of the individual. The function sould compute one float number, its
-                input is the individual.
+            fitness_cont (FitnessController): is a fitness controler object. 
         """
         self.individual_type = individual_type
-        self.fitness_fc = fitness_fc
+        self.fitness_cont = fitness_cont
         self.iteration = 0
         self.current_indiv = None
         self.best_indiv = None
@@ -63,15 +52,19 @@ class RandomController:
         """
         return f'RandomController iter:{self.iteration} best:{self.best_indiv}'
 
-    def load_from_pd(self, dataframe:pd.DataFrame) -> None:
+    def load_from_pd(self, dataframe:pd.DataFrame, verbose:bool = False) -> None:
         """Loads the random controller state from a pandas dataframe.
         The dataframe must contain fitness and representation columns.
 
+        Created for the pourpouses of WS optimalization!
+
         Args:
             dataframe (pd.DataFrame): is the dataframe to be loaded from.
+            verbose (bool, optional): If true, prints out informations. Defaults to False.
         """
         self.iteration = len(dataframe.index) - 1
-        self.best_indiv = Individual(self.individual_type, self.fitness_fc)
+        self.best_indiv = Individual(self.individual_type)
+        self.fitness_cont.fit_from_df(dataframe, verbose)
         best_row = dataframe.loc[dataframe['fitness'].idxmax()]
         self.best_indiv.fitness = best_row['fitness']
         self.best_indiv.representation = eval(best_row['representation'])
@@ -96,12 +89,12 @@ class RandomController:
         for iteration in range(1, num_individuals + 1):
             
             # create new individual
-            self.current_indiv = Individual(self.individual_type, self.fitness_fc)
+            self.current_indiv = Individual(self.individual_type)
 
             # compute fitness
-            fitness = self.current_indiv.get_fitness()
+            self.fitness_cont.compute_fit([self.current_indiv], verbose=verbose)
 
-            if self.best_indiv is None or fitness > self.best_indiv.fitness:
+            if self.best_indiv is None or self.current_indiv.fitness > self.best_indiv.fitness:
                 self.best_indiv = self.current_indiv
 
             # log
@@ -137,10 +130,12 @@ if __name__ == '__main__':
         new_data['fitness'].append(idnividual.current_indiv.fitness)
 
         data_df = data_df.append(pd.DataFrame(new_data), ignore_index=True)
+    
+    get_fit_vals = lambda p: [- pow(p.representation[0], 2), - pow(p.representation[1], 2)]
+    def fit_from_vals(p, fv, mv): p.fitness = fv[0] + fv[1]
 
-    fitness_fc = lambda p: - pow(p.representation[0], 2) - pow(p.representation[1], 2)
-
-    controler = RandomController([range(-100, 100), range(-100, 100)], fitness_fc)
+    fitness_cont = FitnessController([0, 0], get_fit_vals, fit_from_vals)
+    controler = RandomController([range(-100, 100), range(-100, 100)], fitness_cont)
 
     if len(data_df.index) > 0:
         controler.load_from_pd(data_df)

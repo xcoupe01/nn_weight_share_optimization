@@ -1,1 +1,1 @@
-from .pso import PSOController
+from .pso import PSOController, Particle

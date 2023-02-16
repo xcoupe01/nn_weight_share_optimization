@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
+import pandas as pd
+import numpy as np
 from sklearn.cluster import KMeans
 import math
 import time
@@ -33,6 +35,7 @@ class Layer:
         self.prec_reducer = prec_reducer
         self.elem_size = None
         self.reset_weight_vals = None
+        self.reset_weight_vals = None
 
     def __repr__(self) -> str:
         return "Layer(" + self.name + ")"
@@ -46,7 +49,10 @@ class Layer:
         self.weight = weight
         self.virt_weight_params = weight.numel()
 
-    def set_reset_weight(self) -> None: #TODO:
+    def set_reset_weight(self) -> None:
+        """Sets the reset point of the network.
+        """
+
         self.reset_weight_vals = {
             'weights': copy.deepcopy(torch.flatten(self.weight.cpu()).detach().numpy()),
             'elem_size': self.elem_size,
@@ -54,7 +60,13 @@ class Layer:
             'virt_num_param': self.virt_weight_params,
         }
 
-    def reset_weight(self) -> None: #TODO:
+    def reset_weight(self) -> None:
+        """Resets the net to the previously given reset point.
+
+        Raises:
+            Exception: If the reset point was not set before.
+        """
+
         if self.reset_weight_vals is None:
             raise Exception('Layer reset error - no value to reset to')
         
@@ -83,13 +95,23 @@ class Layer:
         Args:
             cluster_centers (list, optional): Is the cluster centers to be added. Defaults to None.
             point_labels (list, optional): Is the data labels to be displayed. Defaults to None.
+            point_labels (list, optional): Is the data labels to be displayed. Defaults to None.
         """
 
         plt.clf()
         plt.figure(figsize=(18,6))
         plt.title(self.name)
         plt.xlabel(f'{self.name} layer weights')
+        plt.figure(figsize=(18,6))
+        plt.title(self.name)
+        plt.xlabel(f'{self.name} layer weights')
         plt.ylabel('count')
+
+        data = pd.DataFrame({
+            'weights': torch.flatten(self.weight.cpu()).detach().numpy(),
+            'cluster': point_labels if point_labels is not None else None   
+        })
+
 
         data = pd.DataFrame({
             'weights': torch.flatten(self.weight.cpu()).detach().numpy(),
@@ -102,6 +124,7 @@ class Layer:
             x = 'weights',
             hue = 'cluster' if point_labels is not None else None
         )
+
 
         if cluster_centers is not None:
             for center in cluster_centers:
@@ -118,12 +141,12 @@ class Layer:
             assign (bool, optional): If true the new weight is assgined to the network. Defaults to False.
             unlock (bool, optional): If true, the new weights are set as unlocked in the model. Defaults to True.
             prec_rtype (string, optional): If not None, it defines the float precision reduction type
-            (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
+                (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
             mod_focus (float, optional): Modifier of the clustering space - 0 means not modified, the larger the number, 
-            the larger the number the more clusters are shifted towards the mean of weights. The bigger the number
-            the more is the modification focused on the center point. Defaults to None (== 0.0).
+                the larger the number the more clusters are shifted towards the mean of weights. The bigger the number
+                the more is the modification focused on the center point. Defaults to None (== 0.0).
             mod_spread (float, optional): Modifier of the clustering space - 0 means not modigied, the larger the number,
-            the more is the the modification spreaded (most spread is around the focus point). Defaults to None (== 0.0).
+                the more is the the modification spreaded (most spread is around the focus point). Defaults to None (== 0.0).
 
             The k-means `y` space modification is calculated by following expression:
 
@@ -139,9 +162,13 @@ class Layer:
         mod_focus = 0 if mod_focus is None else mod_focus
         mod_spread = 0 if mod_spread is None else mod_spread
         
+        mod_focus = 0 if mod_focus is None else mod_focus
+        mod_spread = 0 if mod_spread is None else mod_spread
+        
         # getting the current weights and preparing them for clustering
         original_shape = self.weight.shape
         original_type = self.weight.dtype
+        device = self.weight.device
         device = self.weight.device
 
         numpy_weights = torch.flatten(self.weight.cpu()).detach().numpy()
@@ -166,10 +193,33 @@ class Layer:
 
         numpy_weights_2D = np.swapaxes(numpy_weights_2D, 0, 1)
 
+        # adjustment of distances by adding new dimension
+        numpy_weights_2D = np.vstack((
+            numpy_weights, 
+            mod_spread * np.ptp(numpy_weights) * np.tanh(mod_focus * (numpy_weights - np.mean(numpy_weights))) # adjustment to mean
+        ))
+
+        # plot the weights int the new dimension
+        if plot:
+            plt.figure(figsize=(18,6))
+            plt.scatter(numpy_weights_2D[0], numpy_weights_2D[1], marker="+", label='weights')
+            plt.axvline(x=np.mean(numpy_weights), color='r', label='mean')
+            plt.axvline(x=0, color='g', label='zero')
+            plt.title(f'{self.name} weights space for K-means clustering')
+            plt.xlabel('Original weights values')
+            plt.ylabel('Modified weights values')
+            plt.legend()
+            plt.show()
+
+        numpy_weights_2D = np.swapaxes(numpy_weights_2D, 0, 1)
+
         # clustering
         kmeans = KMeans(n_clusters=n_weights, random_state=42).fit(numpy_weights_2D)
 
+        kmeans = KMeans(n_clusters=n_weights, random_state=42).fit(numpy_weights_2D)
+
         if plot:
+            self.plot_weight(kmeans.cluster_centers_[:, [0]], kmeans.labels_)
             self.plot_weight(kmeans.cluster_centers_[:, [0]], kmeans.labels_)
         
         # precision reduction if possible
@@ -208,7 +258,7 @@ class Layer:
 
         Args:
             mapping_bits (int, optional): Sets the number of bits wanted to be used
-            as a key to the codebook (and in the weight matrix). Defaults to None.
+                as a key to the codebook (and in the weight matrix). Defaults to None.
 
         Raises:
             Exception: if the mapping_bits is seted and the number of elements is
@@ -328,18 +378,18 @@ class WeightShare:
 
         Args:
             layer_clusters (list): Number of clusters for each layer. The list must be the same lenght as there are
-            layers in the model
+                layers in the model
             layer_order (list, optional): Order of the compression of the layers. The compression is driven by this list. 
-            The format is that the list has the indexes of layers in order to be shared. Defaults to None (all layers from input
-            to output layer).
+                The format is that the list has the indexes of layers in order to be shared. Defaults to None (all layers from input
+                to output layer).
             retrain_amount (list, optional): specifies the retrain amount - the index of the retrain amount corresponds to the
-            layer to be retrained. Defaults to None (no retraining).
+                layer to be retrained. Defaults to None (no retraining).
             prec_rtype (list, optional): If not None, it defines the float precision reduction type for each layer
-            (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
+                (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
             mods_focus (list, optional): If not None, it defines the clustering space modification for each layer.
-            The modifications is described in the Layer.share function as mod_focus parameter. Defaults to None.
+                The modifications is described in the Layer.share function as mod_focus parameter. Defaults to None.
             mods_spread (list, optional): If not None, it defines the clustering space modification for each layer
-            The modification is described in the Layer.share function as mod_spread parameter. Defaults to None.
+                The modification is described in the Layer.share function as mod_spread parameter. Defaults to None.
             verbose (bool, optional): To print information about the sharing during the execution. Defaults to False.
 
         Raises:
@@ -365,6 +415,7 @@ class WeightShare:
             prec_reduct is not None and len(prec_reduct) != len(self.model_layers) or \
             mods_focus is not None and len(mods_focus) != len(self.model_layers) or \
             mods_spread is not None and len(mods_spread) != len(self.model_layers):
+        # parameter check
 
             print(
                 len(layer_clusters) != len(self.model_layers),
@@ -380,6 +431,8 @@ class WeightShare:
             print(layer_order)
             print(retrain_amount)
             print(prec_reduct)
+            print(mods_focus)
+            print(mods_spread)
             print(mods_focus)
             print(mods_spread)
 
@@ -448,18 +501,18 @@ class WeightShare:
 
     def finetuned_mod(self, layer_clusters:list, mods_focus:list, mods_spread:list, layer_order:list = None, prec_reduct:list = None,
         plot:bool = False) -> list:
-        """TODO
+        """Tryes to get the best shared net by modulating the space. Computationaly intesive to execute!
 
         Args:
-            layer_clusters (list): _description_
-            mods_focus (list): _description_
-            mods_spread (list): _description_
-            layer_order (list, optional): _description_. Defaults to None.
-            prec_reduct (list, optional): _description_. Defaults to None.
-            plot (bool, optional): _description_. Defaults to False.
+            layer_clusters (list): number of clusters for each layer.
+            mods_focus (list): possible values of focus modulation for each layer.
+            mods_spread (list): the spread for each layer.
+            layer_order (list, optional): The order of layer processing. Defaults to None (from first to last).
+            prec_reduct (list, optional): The share precision reduction. Defaults to None.
+            plot (bool, optional): If true, share plots are shown. Defaults to False.
 
         Returns:
-            list: _description_
+            list: list of the best found focus modulations.
         """
 
         if layer_order is None:
@@ -527,6 +580,12 @@ class WeightShare:
         return best_focus_vals
     
     def set_reset(self, layers:list = None) -> None:
+        """Sets the reset point of the whole net.
+
+        Args:
+            layers (list, optional): List of layers to set the reset point of. 
+                Defaults to None (all layer reset points are set).
+        """
         
         if layers is None:
             layers = range(len(self.model_layers))
@@ -535,15 +594,18 @@ class WeightShare:
             self.model_layers[layer].set_reset_weight()
 
     def reset(self, layers:list = None) -> None:
-        """Resets the weight share internal representation. TODO:REDO
-        It does not reset the net!!!
+        """Resets the net to previously set reset point.
+
+        Args:
+            layers (list, optional): List of layers to be reset. 
+                Defaults to None (all layers are reseted).
         """
         
         if layers is None:
             layers = range(len(self.model_layers)) 
 
-        for layer in layers:
-            self.model_layers[layer].reset_weight()
+        for layer in self.model_layers:
+            layer.reset_weight()
 
     def get_layer_cluster_nums_perf(self, layer_i:int, layer_range:list, perf_fcs:list, pre_perf_fc=None, prec_rtype:str=None) -> list:
         """Gets layer cluster performace for a given set of cluster numbers. After executing
@@ -554,9 +616,9 @@ class WeightShare:
             layer_range (list): is the list of the number of clusters wanted to be tested.
             perf_fcs (list): are functions that will test the performace.
             pre_perf_fc (function, optional): is a function that is performed before the test.
-            It recieves the model layer after sharing. Defaults to None.
+                It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
-            (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
+                (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
 
         Raises:
             Exception: if the layer is already locked, error is raised.
@@ -597,12 +659,12 @@ class WeightShare:
 
         Args:
             layer_ranges (list): is the list of lists of the number of clusters wanted to be tested. 
-            Index of the list corresponds to an index of layer in the model.
+                Index of the list corresponds to an index of layer in the model.
             perf_fcs (_type_): are functions that will test the performace.
             pre_perf_fc (_type_, optional): is a function that is performed before the test.
-            It recieves the model layer after sharing. Defaults to None.
+                It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
-            (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
+                (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
 
         Raises:
             Exception: When the layer_ranges do not correspond to the model layers as described an exception is raised.
@@ -630,15 +692,15 @@ class WeightShare:
 
         Args:
             layer_ranges (list): is a list where index corespond to a layer in the model. Each
-            index contains a list of possible cluster numbers wanted to be optimized.
+                index contains a list of possible cluster numbers wanted to be optimized.
             perf_fc (function): is the performace function (probably accuracy getter)
             perf_lim (float, optional): is the lowest accuracy acceptable. Defaults to None.
             max_num_range (int, optional): is the maximum number of clusters numbers for a layer. Defaults to None.
             savefile (str, optional): is a savefile to be loaded from or saved to. Defaults to None.
             pre_perf_fc (function, optional): is a function that is performed before the test.
-            It recieves the model layer after sharing. Defaults to None.
+                It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
-            (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
+                (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
 
         Returns:
             list: a list where an index corresponds to a given layer. Each index contains a list of optimized
@@ -658,6 +720,7 @@ class WeightShare:
         
         # compute performances if file not avalible
         else:
+            perfs = self.get_layers_cluster_nums_perfs(layer_ranges, [perf_fc], pre_perf_fc, prec_rtype=prec_rtype)
             perfs = self.get_layers_cluster_nums_perfs(layer_ranges, [perf_fc], pre_perf_fc, prec_rtype=prec_rtype)
             perfs = [[[y[0], y[1][0]] for y in x] for x in perfs]
 

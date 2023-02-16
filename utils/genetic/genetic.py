@@ -5,12 +5,19 @@ import random
 import pandas as pd
 import copy
 import os
+from utils.fitness_controller import FitnessController
 
 class Individual:
-    def __init__(self, possible_values:list, fitness_fc, chromosome:list=None):
+    def __init__(self, possible_values:list, chromosome:list=None):
+        """Inits individual solution for genetic search.
+
+        Args:
+            possible_values (list): list of possible values in the chromosome.
+            chromosome (list, optional): Is an preset chromosome of the individual. Defaults to None.
+        """
+
         self.possible_values = possible_values
         self.chromosome = []
-        self.fitness_fc = fitness_fc
         self.fitness = None
         self.chromosome = chromosome if chromosome is not None else []
         self.data = None # added for tmp info (for example to log cr and AL separetly, in fitness it will be combined)
@@ -21,16 +28,6 @@ class Individual:
             
     def __repr__(self) -> str:
         return f'(Individual: {self.chromosome}, fitness: {self.fitness})'
-
-    def get_fitness(self) -> float:
-        """Calculates individuals fitness by a given function
-
-        Returns:
-            float: the fitness value of the individual
-        """
-        if self.fitness is None or self.data is None:
-            self.fitness = self.fitness_fc(self)
-        return self.fitness
 
     def set_chromosome(self, chromosome:list) -> None:
         """Sets a chromosome of an individual, concurentrly erases all 
@@ -53,24 +50,27 @@ class Individual:
         EvolConfig.MUTATION_ALGORITHM(self, p)
 
 class GeneticController:
-    def __init__(self, individual_type:list, num_individuals:int, fitness_fc):
+    def __init__(self, individual_type:list, num_individuals:int, fitness_cont:FitnessController):
+        """Inits genetic search controller.
+
+        Args:
+            individual_type (list): list of possible values of the chromosome.
+            num_individuals (int): number of individuals in the population.
+            fitness_cont (FitnessController): is a fitness controler object.
+        """
+
         self.individual_type = individual_type
-        self.population = []
+        self.population:list[Individual] = []
         self.generation = None
         self.jump_start = False
+        self.fitness_cont = fitness_cont
 
         self.generation = int(0)
         for _ in range(num_individuals):
-            self.population.append(Individual(self.individual_type, fitness_fc))
+            self.population.append(Individual(self.individual_type))
 
     def __repr__(self) -> str:
         return f'Genetic Controller: generation: {self.generation}, num. population: {len(self.population)}'
-
-    def compute_fitness(self) -> None:
-        """Computes fitness of the whole population.
-        """
-        for indiv in self.population:
-            indiv.get_fitness()
 
     def run(self, num_generations:int, logger_fc=None, save_data:pd.DataFrame=None ,deal_elit=None, verbose:bool=False) -> None:
         """Runs evolution algorithm as inited.
@@ -97,7 +97,8 @@ class GeneticController:
             
             if not self.jump_start:
                 # score the population
-                self.compute_fitness()
+                self.fitness_cont.compute_fit(self.population, verbose)
+
                 self.population.sort(key = lambda x: x.fitness, reverse=True)
 
                 # setting best position
@@ -149,21 +150,26 @@ class GeneticController:
         
         return best_chrom
 
-    def load_from_pd(self, df:pd.DataFrame) -> None:
+    def load_from_pd(self, df:pd.DataFrame, verbose:bool = False) -> None:
         """Loads the Genetic controller state from a pandas dataframe.
+
+        Created for the pourpouses of WS optimalization!
 
         Args:
             df (pd.DataFrame): is the dataframe to be loaded from.
+            verbose (bool, optional): If true, prints out informations. Defaults to False.
         """
 
         self.generation = df['generation'].max()
         self.jump_start = True
 
+        self.fitness_cont.update_targs([df['accuracy'].max(), df['compression'].max()], verbose)
+
         df = df[df['generation'] == self.generation].reset_index()
 
         for i, row in df.iterrows():
-            self.population[i].chromosome = eval(row['chromosome'])
-            self.population[i].fitness = row['fitness']
+            self.population[i].chromosome = eval(row['chromosome']) if type(row['chromosome']) is str else row['chromosome']
+            self.population[i].fitness = self.fitness_cont.fit_from_vals([row['accuracy'], row['compression']], self.fitness_cont.targ)
 
 # simple test run to optimize quadratic function
 if __name__ == '__main__':
@@ -185,9 +191,11 @@ if __name__ == '__main__':
 
         data_df = data_df.append(pd.DataFrame(new_data), ignore_index=True)
 
-    fitness_fc = lambda p: - pow(p.chromosome[0], 2) - pow(p.chromosome[1], 2)
+    get_fit_vals = lambda p: [- pow(p.representation[0], 2), - pow(p.representation[1], 2)]
+    def fit_from_vals(p, fv, mv): p.fitness = fv[0] + fv[1]
 
-    controler = GeneticController([range(-100, 100), range(-100, 100)], 5, fitness_fc)
+    fitness_cont = FitnessController([0, 0], get_fit_vals, fit_from_vals)
+    controler = GeneticController([range(-100, 100), range(-100, 100)], 5, fitness_cont)
 
     if len(data_df.index) > 0:
         controler.load_from_pd(data_df)

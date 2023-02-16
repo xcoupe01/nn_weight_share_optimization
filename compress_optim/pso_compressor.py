@@ -15,7 +15,7 @@ def logger_fc(pso_cont:PSOController, before_loss:float, save_data:pd.DataFrame=
     new_data = copy.deepcopy(CompressConfig.PSO_DATA)
     for particle in pso_cont.swarm:
         new_data['time'].append(pso_cont.time)
-        new_data['fitness'].append(particle.current_fit)
+        new_data['fitness'].append(particle.fitness)
         new_data['position'].append(particle.position)
         new_data['representation'].append(particle.representation)
         new_data['velocity'].append(particle.velocity)

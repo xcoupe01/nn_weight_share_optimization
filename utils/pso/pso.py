@@ -4,19 +4,18 @@ import pandas as pd
 import os
 import numpy as np
 from math import sqrt
+from utils.fitness_controller import FitnessController
 
 class Particle :
-    def __init__(self, possible_values:list, max_velocity:list, fitness_fc, 
+    def __init__(self, possible_values:list, max_velocity:list, 
         inertia_c:float, cognitive_c: float, social_c:float, position:list=None, velocity:list = None) -> None:
         """Inits particle object in order to do PSO optimization.
 
         Args:
-            position_ranges (list): Defines the possible position ranges. Each index of list corresponds to its dimension.
-            Each item on index is expected to be a tuple in format (minimal value, maxima value).
+            possible_values (list): Defines the possible position values. Each index of list corresponds to its dimension.
+                Each item on index is a list of possible values in this dimension.
             max_velocity (list): Defines the maximum velocity for the particle. Each index of list corresponds to its dimension.
-            Each item on index is expected to be a float value.
-            fitness_fc (function): Defines the fitness function of the particle. The function sould compute one float number, its
-            input is the particle position.
+                Each item on index is expected to be a float value.
             inertia_c (float): is the particles inertia coeficient.
             cognitive_c (float): is the particles cognitive coeficient.
             social_c (float): is the particles social coeficient.
@@ -38,10 +37,8 @@ class Particle :
         self.position_ranges = [[0, len(x)] for x in possible_values]
         self.position = []
         self.velocity = []
-        self.current_fit = None
-        self.my_best_pos = None
-        self.my_best_fit = None
-        self.fitness_fc = fitness_fc
+        self.fitness = None
+        self.my_best:Particle = None
         self.inertia_c = inertia_c
         self.cognitive_c = cognitive_c
         self.social_c = social_c
@@ -68,7 +65,7 @@ class Particle :
             str: Particle string with its information about current position, velocity and fitness.
         """
 
-        return f'Particle position:{self.position} velocity:{self.velocity} fitness:{self.current_fit}'
+        return f'Particle position:{self.position} velocity:{self.velocity} fitness:{self.fitness}'
     
     def rand_pos(self) -> None:
         """Sets random position and velociti of the particle.
@@ -76,6 +73,7 @@ class Particle :
 
         self.position = []
         self.velocity = []
+        self.my_best = None
 
         # generating position and velocity
         for i in range(len(self.position_ranges)):
@@ -88,19 +86,6 @@ class Particle :
             index_position = min(int(self.position[i]), len(self.possible_values[i]) - 1)
             index_position = max(index_position, 0)
             self.representation.append(self.possible_values[i][index_position])
-
-    def compute_fitness(self) -> float:
-        """Computes the particles fitness based on the set fitness function.
-
-        Returns:
-            float: current fitness of the particle
-        """
-
-        self.current_fit = self.fitness_fc(self)
-        if self.my_best_pos is None or self.current_fit > self.my_best_fit:
-            self.my_best_fit = self.current_fit
-            self.my_best_pos = copy.deepcopy(self.position)
-        return self.current_fit
 
     def move(self, swarm_best_pos:list, limit_position:bool=True, limit_velocity:bool=True) -> None:
         """Moves the particle accordigly to the PSO algorithm by following expression:
@@ -133,7 +118,7 @@ class Particle :
         # compute new velocity
         for i in range(len(self.velocity)):
             self.velocity[i] = self.inertia_c * self.velocity[i] + \
-                self.cognitive_c * random.uniform(0, 1) * (self.my_best_pos[i] - self.position[i]) + \
+                self.cognitive_c * random.uniform(0, 1) * (self.my_best.position[i] - self.position[i]) + \
                 self.social_c * random.uniform(0, 1) * (swarm_best_pos[i] - self.position[i])
             # velocity limitation
             if limit_velocity and self.velocity[i] > self.max_velocity[i]:
@@ -154,21 +139,29 @@ class Particle :
         for i in range(len(self.possible_values)):
             index_position = min(int(self.position[i]), len(self.possible_values[i]) - 1)
             self.representation.append(self.possible_values[i][index_position])
+        
+        # erase data
+        self.data = None
 
 class PSOController:
     def __init__(self, num_particles:int, particle_range:list, particle_max_velocity:list,
-        particle_fitness, inertia_c:float, cognitive_c:float=2.05, social_c:float=2.05, 
+        inertia_c:float, fitness_cont:FitnessController, cognitive_c:float=2.05, social_c:float=2.05, 
         BH_radius:float = None, BH_vel_tresh:float = None) -> None:
-        """Inits the PSO controller with its swarm.
+        """Inits the PSO controller with its swarm. Also can be upgraded to Black Hole algorithm
+        by specifying the radius and velocity theshold.
 
         Args:
             num_particles (int): is the number of the particlen in the PSO swarm.
             particle_range (list): particle ranges as describes in init Particle object.
             particle_max_velocity (list): particle max velocity values as described in init Particle object.
-            particle_fitness (function): particle fitness function.
             inertia_c (float): inertia coeficient of the algorithm.
+            fitness_cont (FitnessController): is a fitness controler object. 
             cognitive_c (float, optional): cognitive coeficient of the particles. Defaults to 2.05.
             social_c (float, optional): social coeficient of the particles. Defaults to 2.05.
+            BH_radius (float, optional): Part of Black Hole algorithm upgrade. Defines the radius,
+                where the paricles are absorbed by the best position.
+            BH_vel_tresh (float, optional):Part of Black Hole algorithm upgrade. Defines the velocity theshold.
+                When some particle is slover than this speed, its absorbed by the best position.
         """
 
         # set attributes
@@ -178,16 +171,14 @@ class PSOController:
         self.swarm:list[Particle] = []
         self.time = 0
         self.jump_start = False
-        self.partice_range = particle_range
+        self.particle_range = particle_range
         self.BH_radius = BH_radius
         self.BH_vel_tresh = BH_vel_tresh
+        self.fitness_controller = fitness_cont
 
         # init swarm
         for _ in range(num_particles):
-            self.swarm.append(
-                Particle(particle_range, particle_max_velocity, 
-                    particle_fitness, inertia_c, cognitive_c, social_c)
-                )
+            self.swarm.append(Particle(particle_range, particle_max_velocity, inertia_c, cognitive_c, social_c))
 
     def __repr__(self) -> str:
         """Defines the string representation of the PSO controller object.
@@ -198,20 +189,25 @@ class PSOController:
 
         return f'PSO Controller: time: {self.time}, num particles {len(self.swarm)}'
 
-    def load_from_pd(self, dataframe:pd.DataFrame) -> None:
+    def load_from_pd(self, dataframe:pd.DataFrame, verbose:bool = False) -> None:
         """Loads the PSO controller state from a pandas dataframe.
         It assumes the dataframe contains the dataframe is saved in a way, that there
-        are at least position, velocity and fitness attributes for each time step
+        are at least position, velocity, compression rate and accuracy attributes for each time step
         of the algorithm. Also that the dataframe is sorted by the time and
         each particle have the same index in the one time period.
 
+        Created for the pourpouses of WS optimalization!
+
         Args:
             dataframe (pd.DataFrame): is the dataframe to be loaded from.
+            verbose (bool, optional): If true, prints out informations. Defaults to False.
         """
         
         # setting the controller
         self.time = dataframe.time.max()
         self.jump_start = True
+
+        self.fitness_controller.fit_from_df(dataframe, verbose=verbose)
 
         # setting the swarm
         for i in range(len(self.swarm)):
@@ -224,9 +220,23 @@ class PSOController:
             # setting particle attribudes by the file
             self.swarm[i].position = eval(current_fit.iloc[0]['position'])
             self.swarm[i].velocity = eval(current_fit.iloc[0]['velocity'])
-            self.swarm[i].current_fit = current_fit.iloc[0]['fitness']
-            self.swarm[i].my_best_pos = eval(best_fit.iloc[0]['position'])
-            self.swarm[i].my_best_fit = best_fit.iloc[0]['fitness']
+            self.swarm[i].fitness = current_fit.iloc[0]['fitness']
+
+            particle_best = Particle(
+                self.particle_range, 
+                self.swarm[i].max_velocity, 
+                self.inertia_c, 
+                self.cognitive_c, 
+                self.social_c, 
+                eval(best_fit.iloc[0]['position']) if type(best_fit.iloc[0]['position']) is str else best_fit.iloc[0]['position'],
+                eval(best_fit.iloc[0]['velocity']) if type(best_fit.iloc[0]['velocity']) is str else best_fit.iloc[0]['velocity'])
+            particle_best.data = {
+                'accuracy': best_fit.iloc[0]['accuracy'], 
+                'compression': best_fit.iloc[0]['compression'],
+            }
+            particle_best.fitness = best_fit.iloc[0]['fitness']
+            self.swarm[i].my_best = particle_best
+
             self.swarm[i].representation = eval(current_fit.iloc[0]['representation'])
 
     def run(self, time:int, logger_fc=None, save_data:pd.DataFrame=None, limit_position:bool=True, limit_velocity:bool=True, verbose:bool=False) -> list:
@@ -235,10 +245,10 @@ class PSOController:
         Args:
             time (int): is the number of iterations over the whole swarm.
             logger_fc (function, optional): is an optional logger function that can acces the whole object
-            after each iteration and is meant to log data (if save_data given its also its input). Defaults to None.
+                after each iteration and is meant to log data (if save_data given its also its input). Defaults to None.
             save_data (pd.Dataframe, optional): is an optional pandas datagrame to log data to. If defined,
-            it is expected that logger_fc takes this dataframe and the function returns the updated one.
-            Also if defined. the function returns the saves, otherwise the best found solution is returned.
+                it is expected that logger_fc takes this dataframe and the function returns the updated one.
+                Also if defined. the function returns the saves, otherwise the best found solution is returned.
             limit_position (bool, optional): defines if the position is limited during the run. Defaults to True.
             limit_velocity (bool, optional): defines if the velocity is limited during the run. Defaults to True.
             verbose (bool, optional): enables progression prints. Defaults to False.
@@ -251,8 +261,7 @@ class PSOController:
 
         # initing swarm fitness
         if not self.jump_start:
-            for particle in self.swarm:
-                particle.compute_fitness()
+            self.fitness_controller.compute_fit(self.swarm, verbose=verbose)
             # logging
             if logger_fc is not None:
                 if save_data is not None:
@@ -261,26 +270,24 @@ class PSOController:
                     logger_fc(self)
 
         # initing best swarm position and fitness
-        best_particle = max(self.swarm, key=lambda p: p.my_best_fit)
-        best_position = copy.deepcopy(best_particle.my_best_pos)
-        best_fitness = best_particle.my_best_fit
+        best_particle:Particle = max(self.swarm, key=lambda p: p.my_best.fitness).my_best
         
         start_from = 1 if self.jump_start else 2
         if verbose: 
-            print(f'Time {start_from-1}/{time} ({self.time}) best fitness {best_fitness}')
+            print(f'Time {start_from-1}/{time} ({self.time}) best fitness {best_particle.fitness}')
 
         # optimization loop
         for t in range(start_from, time+1):
             for particle in self.swarm:
-                particle.move(best_position, limit_position, limit_velocity)
-                particle.compute_fitness()
-            best_particle = max(self.swarm, key=lambda p: p.my_best_fit)
-            best_position = copy.deepcopy(best_particle.my_best_pos)
-            best_fitness = best_particle.my_best_fit
+                particle.move(best_particle.position, limit_position, limit_velocity)
+            
+            self.fitness_controller.compute_fit(self.swarm, verbose=verbose)
+
+            best_particle = max(self.swarm, key=lambda p: p.my_best.fitness).my_best
 
             self.time += 1
             if verbose:
-                print(f'Time {t}/{time} ({self.time}) best fitness {best_fitness}')
+                print(f'Time {t}/{time} ({self.time}) best fitness {best_particle.fitness}')
 
             # logging
             if logger_fc is not None:
@@ -294,16 +301,16 @@ class PSOController:
                 for particle in self.swarm:
                     if particle == best_particle:
                         continue
-                    if sqrt(np.sum(np.power((np.array(particle.position) - np.array(best_position)), 2))) <= self.BH_radius and \
+                    if sqrt(np.sum(np.power((np.array(particle.position) - np.array(best_particle.position)), 2))) <= self.BH_radius and \
                         np.sum(np.power(np.array(particle.velocity), 2)) <= self.BH_vel_tresh:
                         particle.rand_pos()
 
         # returning the best found representation
         best_representation = []
 
-        for i in range(len(self.partice_range)):
-            index_position = min(int(best_position[i]), len(self.partice_range[i]) - 1)
-            best_representation.append(self.partice_range[i][index_position])
+        for i in range(len(self.particle_range)):
+            index_position = min(int(best_particle.position[i]), len(self.particle_range[i]) - 1)
+            best_representation.append(self.particle_range[i][index_position])
 
         if save_data is not None:
             return save_data
@@ -331,9 +338,11 @@ if __name__ == '__main__':
 
         data_df = data_df.append(pd.DataFrame(new_data), ignore_index=True)
 
-    fitness_fc = lambda p: - pow(p.representation[0], 2) - pow(p.representation[1], 2)
+    get_fit_vals = lambda p: [- pow(p.representation[0], 2), - pow(p.representation[1], 2)]
+    def fit_from_vals(p, fv, mv): p.fitness = fv[0] + fv[1]
 
-    controler = PSOController(10, [range(-100, 100), range(-100, 100)], [1, 1], fitness_fc ,inertia_c=0.8, BH_radius=1, BH_vel_tresh=1)
+    fitness_cont = FitnessController([0, 0], get_fit_vals, fit_from_vals)
+    controler = PSOController(10, [range(-100, 100), range(-100, 100)], [1, 1], inertia_c=0.8, fitness_cont=fitness_cont, BH_radius=1, BH_vel_tresh=1)
 
     if len(data_df.index) > 0:
         controler.load_from_pd(data_df)

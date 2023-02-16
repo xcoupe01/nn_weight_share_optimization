@@ -1,1 +1,1 @@
-from .rnd import RandomController
+from .rnd import RandomController, Individual
