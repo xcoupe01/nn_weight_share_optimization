@@ -10,8 +10,10 @@ class CompressConfig:
     SAVE_EVERY = 1
     VERBOSE = True
     SHARE_ORDER = [0, 1, 2, 3, 4]
-    RETRAIN_AMOUNT = [0, 0, 0, 0, 0]
+    RETRAIN_AMOUNT = None #[0, 0, 0, 0, 0]
     PRECISION_REDUCTION = None #['f4', 'f4', 'f4', 'f4', 'f4']
+    CLUST_MOD_FOCUS = None #[0, 0, 0, 0, 0]
+    CLUST_MOD_SPREAD = None #[0, 0, 0, 0, 0]
     DEVICE = 'cpu'
 
     # genetic config
@@ -68,6 +70,38 @@ class CompressConfig:
         'acc_t': 'float32'
     }
 
+    # bh config
+    BH_PARTICLE_MAX_VELOCITY = [4 for _ in range(5)]
+    BH_RADIUS = 1
+    BH_VEL_TRESH = 1
+    BH_SAVE_FILE = './results/lenet_BH_save.csv'
+    BH_LIMIT_VELOCITY = True
+    BH_LIMIT_POSITION = True
+    BH_INERTIA = 0.8
+    BH_DATA = {
+        'time': [],
+        'fitness': [],
+        'position': [],
+        'representation': [],
+        'velocity': [],
+        'accuracy': [],
+        'accuracy_loss': [],
+        'compression': [],
+        'share_t': [],
+        'train_t': [],
+        'acc_t': []
+    }
+    BH_DATA_TYPES = {
+        'time' : 'uint8',
+        'fitness': 'float32',
+        'accuracy': 'float32',
+        'accuracy_loss': 'float32',
+        'compression': 'float32',
+        'share_t': 'float32',
+        'train_t': 'float32',
+        'acc_t': 'float32'
+    }
+
     # random config
     RND_SAVE_FILE = './results/lenet_RND_save.csv'
     RND_DATA = {
@@ -92,7 +126,6 @@ class CompressConfig:
 
 def fitness_fc(individual, model:nn.Module, train_settings:list, ws_controller:WeightShare, net_path:str) -> float:
     # reset the net
-    get_trained(model, net_path, train_settings)
     ws_controller.reset()
     
     # get representation
@@ -100,10 +133,12 @@ def fitness_fc(individual, model:nn.Module, train_settings:list, ws_controller:W
 
     # share weigts by chromosome
     individual.data = ws_controller.share(repres, CompressConfig.SHARE_ORDER, CompressConfig.RETRAIN_AMOUNT, 
-        prec_reduct=CompressConfig.PRECISION_REDUCTION, device=CompressConfig.DEVICE)
+        prec_reduct=CompressConfig.PRECISION_REDUCTION, mods_focus=CompressConfig.CLUST_MOD_FOCUS, 
+        mods_spread=CompressConfig.CLUST_MOD_SPREAD)
 
     # compute fitness
     if individual.data['accuracy'] <= 0.95:
         return individual.data['accuracy']
 
-    return 1 / math.sqrt(pow(1 - ((individual.data['accuracy'] - 0.9) * (1/0.1)), 2) + pow(1 - (individual.data['compression']/14), 2))
+    #return 1 / math.sqrt(pow(1 - ((individual.data['accuracy'] - 0.9) * (1/0.1)), 2) + pow(1 - (individual.data['compression']/14), 2))
+    return 1 / math.sqrt(pow(1 - ((individual.data['accuracy'] - 0.9) * (1/0.1)), 2) + pow(1 - (individual.data['compression']/18), 2))

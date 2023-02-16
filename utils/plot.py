@@ -22,6 +22,7 @@ def plot_alcr(dataframe:pd.DataFrame, acceptable_division:bool=True) -> None:
     dataframe['acceptable'] = np.where(dataframe['accuracy_loss'] < ACCEPT_ACCURACY_PER * 0.01, 'passed', 'failed')
     dataframe['accuracy loss [%]'] = dataframe['accuracy_loss'] * 100
     sns.set(rc={'figure.figsize': SNS_FIGSIZE})
+    sns.set(font_scale=2)
 
     plot = None
     if acceptable_division:

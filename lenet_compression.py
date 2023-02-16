@@ -16,6 +16,7 @@ BATCH_SIZE = 32
 N_CLASSES = 10
 EPOCHS = 100
 DEVICE = CompressConfig.DEVICE
+NET_TYPE = 'tanh'
 # net save path
 NET_PATH = './models/lenet/saves/lenet_tanh.save'
 # optimization settings
@@ -27,7 +28,7 @@ def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:i
 
     # initing the lenet model
     dataset = MnistDataset(BATCH_SIZE, './data', val_split=0.5)
-    model = LeNet5(N_CLASSES)
+    model = LeNet5(N_CLASSES, NET_TYPE)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     train_settings = [criterion, optimizer, dataset, EPOCHS, DEVICE, 1, True]
@@ -41,12 +42,13 @@ def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:i
 
     # initing weightsharing
     ws_controller = WeightShare(model, lam_opt, lam_train, lam_test)
+    ws_controller.set_reset()
 
     # oprimizing search ranges
     lam_test_inp = lambda _ : get_accuracy(model, dataset.test_dl, DEVICE)
     if RANGE_OPTIMIZATION:
         search_ranges = ws_controller.get_optimized_layer_ranges(search_ranges, lam_test_inp, 
-            RANGE_OPTIMIZATION_TRESHOLD, savefile=RANGE_OPTIMIZATION_FILE, device=DEVICE)
+            RANGE_OPTIMIZATION_TRESHOLD, savefile=RANGE_OPTIMIZATION_FILE)
 
     # compression part
     save_data = None
@@ -56,6 +58,8 @@ def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:i
         save_data = compression_pso_optim(num_iter, num_pop, search_ranges, before_loss, model, train_settings, ws_controller, NET_PATH)
     elif compress_alg == 'random':
         save_data = compression_random_optim(num_iter * num_pop, search_ranges, before_loss, model, train_settings, ws_controller, NET_PATH)
+    elif compress_alg == 'bh':
+        save_data = compression_bh_optim(num_iter, num_pop, search_ranges, before_loss, model, train_settings, ws_controller, NET_PATH)
     else:
         raise Exception('err')
 
@@ -70,7 +74,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(prog='lenet_compression.py', description='Optimizes compression of LeNet-5 CNN by different algorithms.'+
     'The outputs are storedn in the results folder.')
-    parser.add_argument('-comp', '--compressor', choices=['random', 'pso', 'genetic'], default='random', help='choose the compression algorithm')
+    parser.add_argument('-comp', '--compressor', choices=['random', 'pso', 'genetic', 'blackhole'], default='random', help='choose the compression algorithm')
     parser.add_argument('-pop', '--num_population', metavar='N', type=int, default=12, help='set the population count')
     parser.add_argument('-its', '--num_iterations', metavar='N', type=int, default=30, help='set the iteration count')
     parser.add_argument('-up', '--upper_range', metavar='N', type=int, default=51, help='sets the upper range for compression')

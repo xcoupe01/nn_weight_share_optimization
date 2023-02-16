@@ -2,6 +2,8 @@ import random
 import copy
 import pandas as pd
 import os
+import numpy as np
+from math import sqrt
 
 class Particle :
     def __init__(self, possible_values:list, max_velocity:list, fitness_fc, 
@@ -56,17 +58,8 @@ class Particle :
         if position is not None or velocity is not None:
             raise Exception('Particle init error - cannot load only part of the data')
 
-        # generating position and velocity if not specified
-        for i in range(len(self.position_ranges)):
-            self.position.append(random.uniform(*self.position_ranges[i]))
-            self.velocity.append(random.uniform(-max_velocity[i], max_velocity[i]))
-
-        # setting curent representation
-        self.representation = []
-        for i in range(len(self.possible_values)):
-            index_position = min(int(self.position[i]), len(self.possible_values[i]) - 1)
-            index_position = max(index_position, 0)
-            self.representation.append(self.possible_values[i][index_position])
+        # generating position and velocity if not specified and setting representation
+        self.rand_pos()
 
     def __repr__(self) -> str:
         """Defines the string representation of the particle object.
@@ -76,6 +69,25 @@ class Particle :
         """
 
         return f'Particle position:{self.position} velocity:{self.velocity} fitness:{self.current_fit}'
+    
+    def rand_pos(self) -> None:
+        """Sets random position and velociti of the particle.
+        """
+
+        self.position = []
+        self.velocity = []
+
+        # generating position and velocity
+        for i in range(len(self.position_ranges)):
+            self.position.append(random.uniform(*self.position_ranges[i]))
+            self.velocity.append(random.uniform(-self.max_velocity[i], self.max_velocity[i]))
+
+        # setting curent representation
+        self.representation = []
+        for i in range(len(self.possible_values)):
+            index_position = min(int(self.position[i]), len(self.possible_values[i]) - 1)
+            index_position = max(index_position, 0)
+            self.representation.append(self.possible_values[i][index_position])
 
     def compute_fitness(self) -> float:
         """Computes the particles fitness based on the set fitness function.
@@ -145,7 +157,8 @@ class Particle :
 
 class PSOController:
     def __init__(self, num_particles:int, particle_range:list, particle_max_velocity:list,
-        particle_fitness, inertia_c:float, cognitive_c:float=2.05, social_c:float=2.05) -> None:
+        particle_fitness, inertia_c:float, cognitive_c:float=2.05, social_c:float=2.05, 
+        BH_radius:float = None, BH_vel_tresh:float = None) -> None:
         """Inits the PSO controller with its swarm.
 
         Args:
@@ -162,10 +175,12 @@ class PSOController:
         self.inertia_c = inertia_c
         self.cognitive_c = cognitive_c
         self.social_c = social_c
-        self.swarm = []
+        self.swarm:list[Particle] = []
         self.time = 0
         self.jump_start = False
         self.partice_range = particle_range
+        self.BH_radius = BH_radius
+        self.BH_vel_tresh = BH_vel_tresh
 
         # init swarm
         for _ in range(num_particles):
@@ -258,10 +273,11 @@ class PSOController:
         for t in range(start_from, time+1):
             for particle in self.swarm:
                 particle.move(best_position, limit_position, limit_velocity)
-                par_fit = particle.compute_fitness()
-                if par_fit > best_fitness:
-                    best_fitness = par_fit
-                    best_position = copy.deepcopy(particle.position)
+                particle.compute_fitness()
+            best_particle = max(self.swarm, key=lambda p: p.my_best_fit)
+            best_position = copy.deepcopy(best_particle.my_best_pos)
+            best_fitness = best_particle.my_best_fit
+
             self.time += 1
             if verbose:
                 print(f'Time {t}/{time} ({self.time}) best fitness {best_fitness}')
@@ -272,6 +288,15 @@ class PSOController:
                     save_data = logger_fc(self, save_data)
                 else:
                     logger_fc(self)
+
+            # blackhole algorithm upgrade
+            if self.BH_radius is not None and self.BH_vel_tresh is not None:
+                for particle in self.swarm:
+                    if particle == best_particle:
+                        continue
+                    if sqrt(np.sum(np.power((np.array(particle.position) - np.array(best_position)), 2))) <= self.BH_radius and \
+                        np.sum(np.power(np.array(particle.velocity), 2)) <= self.BH_vel_tresh:
+                        particle.rand_pos()
 
         # returning the best found representation
         best_representation = []
@@ -308,12 +333,12 @@ if __name__ == '__main__':
 
     fitness_fc = lambda p: - pow(p.representation[0], 2) - pow(p.representation[1], 2)
 
-    controler = PSOController(5, [range(-100, 100), range(-100, 100)], [1, 1], fitness_fc ,inertia_c=0.8)
+    controler = PSOController(10, [range(-100, 100), range(-100, 100)], [1, 1], fitness_fc ,inertia_c=0.8, BH_radius=1, BH_vel_tresh=1)
 
     if len(data_df.index) > 0:
         controler.load_from_pd(data_df)
 
-    print(controler.run(10, logger_fc, verbose=True))
+    print(controler.run(20, logger_fc, verbose=True))
 
     os.makedirs(os.path.dirname(SAVE_FILE), exist_ok=True)
     data_df.to_csv(SAVE_FILE, index=False)

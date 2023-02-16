@@ -1,7 +1,7 @@
 #!/bin/bash
 
-readonly ALGORITHM="GA"
-readonly TARGET_FOLDER="./results/lenet_tanh_compress_50/"
+readonly ALGORITHM=$1
+readonly TARGET_FOLDER="./results/lenet_tanh_compress_50_2/"
 readonly TARGET_FILE="lenet_${ALGORITHM}_save.csv"
 readonly NUM_RUNS=11
 
@@ -23,6 +23,9 @@ do
             ;;
             "GA")
             python3.10 lenet_compression.py -comp genetic -pop 12 -its 36 -up 51 -lo 1 -hp
+            ;;
+            "BH")
+            python3.10 lenet_compression.py -comp bh -pop 20 -its 20 -up 51 -lo 1 -hp
             ;;
             *)
             echo -n "unknown algorithm"
