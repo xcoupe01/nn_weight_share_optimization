@@ -49,6 +49,20 @@ class Individual:
         """
         EvolConfig.MUTATION_ALGORITHM(self, p)
 
+    def compute_fitness(self, fit_func) -> float:
+        """Computes fitness of this chromosome.
+
+        Args:
+            fit_func (funtion): The function which computes the bitness based on 
+                chromosomes data.
+
+        Returns:
+            float: The fitness value of this chromosome.
+        """
+        
+        self.fitness = fit_func(self.data)
+        return self.fitness
+
 class GeneticController:
     def __init__(self, individual_type:list, num_individuals:int, fitness_cont:FitnessController):
         """Inits genetic search controller.
@@ -169,16 +183,17 @@ class GeneticController:
 
         for i, row in df.iterrows():
             self.population[i].chromosome = eval(row['chromosome']) if type(row['chromosome']) is str else row['chromosome']
-            self.population[i].fitness = self.fitness_cont.fit_from_vals([row['accuracy'], row['compression']], self.fitness_cont.targ)
+            self.population[i].fitness = self.fitness_cont.fit_from_vals(row, self.fitness_cont.targ)
 
 # simple test run to optimize quadratic function
 if __name__ == '__main__':
 
+    # load save file if possible
     SAVE_FILE = './results/test/test_GA.csv'
-
     data_template = {'generation': [], 'fitness': [], 'chromosome': []}
     data_df = pd.read_csv(SAVE_FILE) if os.path.isfile(SAVE_FILE) else pd.DataFrame(data_template)
 
+    # logger function
     def logger_fc(controller):
         global data_df
 
@@ -191,16 +206,21 @@ if __name__ == '__main__':
 
         data_df = data_df.append(pd.DataFrame(new_data), ignore_index=True)
 
+    # init fit
     get_fit_vals = lambda p: [- pow(p.representation[0], 2), - pow(p.representation[1], 2)]
     def fit_from_vals(p, fv, mv): p.fitness = fv[0] + fv[1]
-
     fitness_cont = FitnessController([0, 0], get_fit_vals, fit_from_vals)
+    
+    # init controllers
     controler = GeneticController([range(-100, 100), range(-100, 100)], 5, fitness_cont)
 
+    # load the controler with data - probably wont work :(
     if len(data_df.index) > 0:
         controler.load_from_pd(data_df)
 
+    # run optimization
     print(controler.run(10, logger_fc, verbose=True))
 
+    # save data
     os.makedirs(os.path.dirname(SAVE_FILE), exist_ok=True)
     data_df.to_csv(SAVE_FILE, index=False)

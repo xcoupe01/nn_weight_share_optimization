@@ -1,11 +1,22 @@
 import torch.nn as nn
 import pandas as pd
 
-from .compressor_config import CompressConfig, fitness_fc
-from utils.weight_sharing import *
 from utils.genetic import GeneticController
+from utils.weight_sharing import *
+from utils.fitness_controller import FitnessController
+from .compressor_config import CompressConfig
 
 def logger_fc(gen_cont:GeneticController, before_loss:float, save_data:pd.DataFrame=None) -> None:
+    """Logger function for Genetic search
+
+    Args:
+        gen_cont (GeneticController): Is the Genetic controller which data are goind to be logged.
+        before_loss (float): Before loss of the net to compute acculacy loss.
+        save_data (pd.DataFrame, optional): Is the dataframe where the data is going to be saved. Defaults to None.
+
+    Returns:
+        pd.DataFrame: The dataframe with the saved data.
+    """
 
     # skip if no place to log data to
     if save_data is None:
@@ -15,7 +26,6 @@ def logger_fc(gen_cont:GeneticController, before_loss:float, save_data:pd.DataFr
     new_data = copy.deepcopy(CompressConfig.EVOL_DATA)
     for indiv in gen_cont.population:
         new_data['generation'].append(gen_cont.generation)
-        new_data['fitness'].append(indiv.fitness)
         new_data['chromosome'].append(indiv.chromosome)
         new_data['accuracy'].append(indiv.data['accuracy'])
         new_data['accuracy_loss'].append(before_loss - indiv.data['accuracy'])
@@ -42,8 +52,19 @@ def deal_elit(population:list) -> None:
                 'test': 0
             }
 
-def compression_genetic_optim(num_generation:int, num_population:int, ranges:list, before_loss:float, 
-    model:nn.Module, train_settings:list, ws_controller:WeightShare, net_path:str) -> pd.DataFrame:
+def compression_genetic_optim(num_generation:int, num_population:int, ranges:list, before_loss:float, fit_controller:FitnessController) -> pd.DataFrame:
+    """Genetic compression impelentation.
+
+    Args:
+        num_generation (int): Number of generations for the Genetic optimization.
+        num_population (int): Number of individuals in population in the Genetic search.
+        ranges (list): The chromosome representation ranges.
+        before_loss (float): Before loss of the network to compute accuracy loss.
+        fit_controller (FitnessController): Fitness controler for the optimization.
+
+    Returns:
+        list: The best found solution.
+    """
 
     # init data
     save_data = pd.read_csv(CompressConfig.EVOL_SAVE_FILE).astype(CompressConfig.EVOL_DATA_TYPES) \
@@ -51,9 +72,9 @@ def compression_genetic_optim(num_generation:int, num_population:int, ranges:lis
         pd.DataFrame(CompressConfig.EVOL_DATA).astype(CompressConfig.EVOL_DATA_TYPES)
 
     # init genetic controller
-    lam_fit = lambda individual : fitness_fc(individual, model, train_settings, ws_controller, net_path)
     lam_log = lambda gen_cont, save_data : logger_fc(gen_cont, before_loss, save_data)
-    genetic = GeneticController(ranges, num_population, lam_fit)
+    
+    genetic = GeneticController(ranges, num_population, fit_controller)
 
     # load if possible
     if save_data is not None and save_data.size != 0:

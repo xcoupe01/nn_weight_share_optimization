@@ -15,12 +15,14 @@ class CompressConfig:
     CLUST_MOD_FOCUS = None #[0, 0, 0, 0, 0]
     CLUST_MOD_SPREAD = None #[0, 0, 0, 0, 0]
     DEVICE = 'cpu'
+    OPTIM_TARGET = [1.0, 12.0]
+    OPTIM_TARGET_LOCK = False
+    OPTIM_TARGET_UPDATE_OFFSET = 1
 
     # genetic config
     EVOL_SAVE_FILE = './results/lenet_GA_save.csv'
     EVOL_DATA = {
         'generation': [],
-        'fitness': [],
         'chromosome': [],
         'accuracy': [],
         'accuracy_loss': [],
@@ -31,7 +33,6 @@ class CompressConfig:
     }
     EVOL_DATA_TYPES = {
         'generation' : 'uint8',
-        'fitness': 'float32',
         'accuracy': 'float32',
         'accuracy_loss': 'float32',
         'compression': 'float32',
@@ -48,7 +49,6 @@ class CompressConfig:
     PSO_INERTIA = 0.8
     PSO_DATA = {
         'time': [],
-        'fitness': [],
         'position': [],
         'representation': [],
         'velocity': [],
@@ -61,7 +61,6 @@ class CompressConfig:
     }
     PSO_DATA_TYPES = {
         'time' : 'uint8',
-        'fitness': 'float32',
         'accuracy': 'float32',
         'accuracy_loss': 'float32',
         'compression': 'float32',
@@ -80,7 +79,6 @@ class CompressConfig:
     BH_INERTIA = 0.8
     BH_DATA = {
         'time': [],
-        'fitness': [],
         'position': [],
         'representation': [],
         'velocity': [],
@@ -93,7 +91,6 @@ class CompressConfig:
     }
     BH_DATA_TYPES = {
         'time' : 'uint8',
-        'fitness': 'float32',
         'accuracy': 'float32',
         'accuracy_loss': 'float32',
         'compression': 'float32',
@@ -105,7 +102,6 @@ class CompressConfig:
     # random config
     RND_SAVE_FILE = './results/lenet_RND_save.csv'
     RND_DATA = {
-        'fitness': [],
         'representation': [],
         'accuracy': [],
         'accuracy_loss': [],
@@ -115,7 +111,6 @@ class CompressConfig:
         'acc_t': []
     }
     RND_DATA_TYPES = {
-        'fitness': 'float32',
         'accuracy': 'float32',
         'accuracy_loss': 'float32',
         'compression': 'float32',
@@ -124,21 +119,44 @@ class CompressConfig:
         'acc_t': 'float32'
     }
 
-def fitness_fc(individual, model:nn.Module, train_settings:list, ws_controller:WeightShare, net_path:str) -> float:
+def fitness_vals_fc(individual, ws_controller:WeightShare):
+    """Base values for computing fitness getter.
+
+    Args:
+        individual ([Individual, Particle]): is the infdividual or paticle to claclulate the values by.
+        ws_controller (WeightShare): Is the WS controller.
+
+    Returns:
+        list: list of the base values (accuracy and compression)
+    """
+
     # reset the net
     ws_controller.reset()
-    
+
     # get representation
     repres = individual.chromosome if hasattr(individual, 'chromosome') else individual.representation
-
-    # share weigts by chromosome
-    individual.data = ws_controller.share(repres, CompressConfig.SHARE_ORDER, CompressConfig.RETRAIN_AMOUNT, 
+    
+    # share weigts by particle
+    if individual.data is None:
+        individual.data = ws_controller.share(repres, CompressConfig.SHARE_ORDER, CompressConfig.RETRAIN_AMOUNT, 
         prec_reduct=CompressConfig.PRECISION_REDUCTION, mods_focus=CompressConfig.CLUST_MOD_FOCUS, 
         mods_spread=CompressConfig.CLUST_MOD_SPREAD)
+    
+    return [individual.data['accuracy'], individual.data['compression']]
+
+def fit_from_vals(data:list[float], targ_vals:list[float]):
+    """Computes fitness from the values that generates the function above.
+
+    Args:
+        data (list[float]): The values from the function above (accuracy and compression).
+        targ_vals (list[float]): Target by fitness controller.
+
+    Returns:
+        float: The outut fitness.
+    """
 
     # compute fitness
-    if individual.data['accuracy'] <= 0.95:
-        return individual.data['accuracy']
+    if data['accuracy'] <= 0.95:
+        return data['accuracy']
 
-    #return 1 / math.sqrt(pow(1 - ((individual.data['accuracy'] - 0.9) * (1/0.1)), 2) + pow(1 - (individual.data['compression']/14), 2))
-    return 1 / math.sqrt(pow(1 - ((individual.data['accuracy'] - 0.9) * (1/0.1)), 2) + pow(1 - (individual.data['compression']/18), 2))
+    return 1 / math.sqrt(pow(1 - ((data['accuracy'] - 0.9) * (1/0.1)), 2) + pow(1 - (data['compression']/targ_vals[1]), 2))

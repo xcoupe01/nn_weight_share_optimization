@@ -29,6 +29,19 @@ class Individual:
         """
         return f'Individual ({self.representation}) fit:{self.fitness}'
 
+    def compute_fitness(self, fit_func) -> float:
+        """Computes the fintess value of this individual by a given fitness function.
+
+        Args:
+            fit_func (function): The which calculates the fitness based on the individuals data.
+
+        Returns:
+            float: The fitness value of the individual.
+        """
+
+        self.fitness = fit_func(self.data)
+        return self.fitness
+
 class RandomController:
     def __init__(self, individual_type:list, fitness_cont:FitnessController) -> None:
         """Inits the Random Search Controller.
@@ -117,11 +130,12 @@ class RandomController:
 # simple test run to optimize quadratic function
 if __name__ == '__main__':
 
+    # load save file if possible
     SAVE_FILE = './results/test/test_RND.csv'
-
     data_template = {'representation': [], 'fitness': []}
     data_df = pd.read_csv(SAVE_FILE) if os.path.isfile(SAVE_FILE) else pd.DataFrame(data_template)
 
+    # logger function
     def logger_fc(idnividual):
         global data_df
 
@@ -131,16 +145,21 @@ if __name__ == '__main__':
 
         data_df = data_df.append(pd.DataFrame(new_data), ignore_index=True)
     
+    # init fit
     get_fit_vals = lambda p: [- pow(p.representation[0], 2), - pow(p.representation[1], 2)]
     def fit_from_vals(p, fv, mv): p.fitness = fv[0] + fv[1]
-
     fitness_cont = FitnessController([0, 0], get_fit_vals, fit_from_vals)
-    controler = RandomController([range(-100, 100), range(-100, 100)], fitness_cont)
 
+    # init controllers
+    controler = RandomController([range(-100, 100), range(-100, 100)], fitness_cont)
+    
+    # load the controler with data - probably wont work :(
     if len(data_df.index) > 0:
         controler.load_from_pd(data_df)
 
+    # run optimization
     print(controler.run(10, logger_fc, verbose=True))
 
+    # save data
     os.makedirs(os.path.dirname(SAVE_FILE), exist_ok=True)
     data_df.to_csv(SAVE_FILE, index=False)

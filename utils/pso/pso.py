@@ -143,6 +143,31 @@ class Particle :
         # erase data
         self.data = None
 
+    def compute_fitness(self, fit_func) -> float:
+        """Updates the particles fitness and its best position fitness by
+        given fitness function.
+
+        Args:
+            fit_func (function): if the function to compute the fitness from with the particles data.
+
+        Returns:
+            float: The fitness value of this particle.
+        """
+       
+        # get my fitness
+        self.fitness = fit_func(self.data)
+
+        # update my best fitness 
+        if self.my_best is not None:
+            self.my_best.fitness = fit_func(self.my_best.data)
+
+        # update my best
+        if self.my_best is None or self.my_best.fitness < self.fitness:
+            self.my_best = copy.deepcopy(self)
+            self.my_best.my_best = None
+
+        return self.fitness
+
 class PSOController:
     def __init__(self, num_particles:int, particle_range:list, particle_max_velocity:list,
         inertia_c:float, fitness_cont:FitnessController, cognitive_c:float=2.05, social_c:float=2.05, 
@@ -320,11 +345,12 @@ class PSOController:
 # simple test run to optimize quadratic function
 if __name__ == '__main__':
 
+    # load save file if possible
     SAVE_FILE = './results/test/test_PSO.csv'
-
     data_template = {'position': [], 'velocity': [], 'representation': [], 'fitness': [], 'time': []}
     data_df = pd.read_csv(SAVE_FILE) if os.path.isfile(SAVE_FILE) else pd.DataFrame(data_template)
 
+    # logger function
     def logger_fc(controller):
         global data_df
 
@@ -338,16 +364,21 @@ if __name__ == '__main__':
 
         data_df = data_df.append(pd.DataFrame(new_data), ignore_index=True)
 
+    # init fit
     get_fit_vals = lambda p: [- pow(p.representation[0], 2), - pow(p.representation[1], 2)]
     def fit_from_vals(p, fv, mv): p.fitness = fv[0] + fv[1]
-
     fitness_cont = FitnessController([0, 0], get_fit_vals, fit_from_vals)
+    
+    # init controllers
     controler = PSOController(10, [range(-100, 100), range(-100, 100)], [1, 1], inertia_c=0.8, fitness_cont=fitness_cont, BH_radius=1, BH_vel_tresh=1)
 
+    # load the controler with data - probably wont work :(
     if len(data_df.index) > 0:
         controler.load_from_pd(data_df)
 
+    # run optimization
     print(controler.run(20, logger_fc, verbose=True))
 
+    # save data
     os.makedirs(os.path.dirname(SAVE_FILE), exist_ok=True)
     data_df.to_csv(SAVE_FILE, index=False)

@@ -7,6 +7,7 @@ from models.lenet.lenet import LeNet5
 from utils.train import *
 from utils.weight_sharing import *
 from utils.plot import *
+from utils.fitness_controller import FitnessController
 
 from compress_optim import *
 
@@ -50,16 +51,20 @@ def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:i
         search_ranges = ws_controller.get_optimized_layer_ranges(search_ranges, lam_test_inp, 
             RANGE_OPTIMIZATION_TRESHOLD, savefile=RANGE_OPTIMIZATION_FILE)
 
+    # defining fitness controller
+    fit_controll = FitnessController(CompressConfig.OPTIM_TARGET, fitness_vals_fc, fit_from_vals, 
+        target_max_offset=CompressConfig.OPTIM_TARGET_UPDATE_OFFSET , lock=CompressConfig.OPTIM_TARGET_LOCK)
+
     # compression part
     save_data = None
     if compress_alg == 'genetic':
-        save_data = compression_genetic_optim(num_iter, num_pop, search_ranges, before_loss, model, train_settings, ws_controller, NET_PATH)
+        save_data = compression_genetic_optim(num_iter, num_pop, search_ranges, before_loss, fit_controll)
     elif compress_alg == 'pso':
-        save_data = compression_pso_optim(num_iter, num_pop, search_ranges, before_loss, model, train_settings, ws_controller, NET_PATH)
+        save_data = compression_pso_optim(num_iter, num_pop, search_ranges, before_loss, fit_controll)
     elif compress_alg == 'random':
-        save_data = compression_random_optim(num_iter * num_pop, search_ranges, before_loss, model, train_settings, ws_controller, NET_PATH)
+        save_data = compression_random_optim(num_iter * num_pop, search_ranges, before_loss, fit_controll)
     elif compress_alg == 'bh':
-        save_data = compression_bh_optim(num_iter, num_pop, search_ranges, before_loss, model, train_settings, ws_controller, NET_PATH)
+        save_data = compression_bh_optim(num_iter, num_pop, search_ranges, before_loss)
     else:
         raise Exception('err')
 

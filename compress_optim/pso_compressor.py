@@ -1,11 +1,22 @@
 import torch.nn as nn
 import pandas as pd
 
-from .compressor_config import CompressConfig, fitness_fc
-from utils.weight_sharing import *
 from utils.pso import PSOController
+from utils.weight_sharing import *
+from utils.fitness_controller import FitnessController
+from .compressor_config import CompressConfig
 
 def logger_fc(pso_cont:PSOController, before_loss:float, save_data:pd.DataFrame=None) -> pd.DataFrame:
+    """Logger function for PSO search
+
+    Args:
+        pso_cont (PSOController): Is the PSO controller which data are goind to be logged.
+        before_loss (float): Before loss of the net to compute acculacy loss.
+        save_data (pd.DataFrame, optional): Is the dataframe where the data is going to be saved. Defaults to None.
+
+    Returns:
+        pd.DataFrame: The dataframe with the saved data.
+    """
 
     # skip if no place to log data to
     if save_data is None:
@@ -15,7 +26,6 @@ def logger_fc(pso_cont:PSOController, before_loss:float, save_data:pd.DataFrame=
     new_data = copy.deepcopy(CompressConfig.PSO_DATA)
     for particle in pso_cont.swarm:
         new_data['time'].append(pso_cont.time)
-        new_data['fitness'].append(particle.fitness)
         new_data['position'].append(particle.position)
         new_data['representation'].append(particle.representation)
         new_data['velocity'].append(particle.velocity)
@@ -34,17 +44,27 @@ def logger_fc(pso_cont:PSOController, before_loss:float, save_data:pd.DataFrame=
 
     return save_data
 
-def compression_pso_optim(num_iterations:int, num_particles:int, ranges:list, before_loss:float, 
-    model:nn.Module, train_settings:list, ws_controller:WeightShare, net_path:str) -> list:
+def compression_pso_optim(num_iterations:int, num_particles:int, ranges:list, before_loss:float, fit_controller:FitnessController) -> list:
+    """PSO compression impelentation.
+
+    Args:
+        num_iterations (int): Number of iterations for the PSO optimization.
+        num_particles (int): Number of particles in the PSO search.
+        ranges (list): The particle representation ranges.
+        before_loss (float): Before loss of the network to compute accuracy loss.
+        fit_controller (FitnessController): Fitness controler for the optimization.
+
+    Returns:
+        list: The best found solution.
+    """
 
     save_data = pd.read_csv(CompressConfig.PSO_SAVE_FILE).astype(CompressConfig.PSO_DATA_TYPES) if \
         os.path.exists(CompressConfig.PSO_SAVE_FILE) else \
         pd.DataFrame(CompressConfig.PSO_DATA).astype(CompressConfig.PSO_DATA_TYPES)
 
     # initing pso
-    lam_fit = lambda individual : fitness_fc(individual, model, train_settings, ws_controller, net_path)
     lam_log = lambda pso_cont, save_data : logger_fc(pso_cont, before_loss, save_data)
-    pso = PSOController(num_particles, ranges, CompressConfig.PSO_PARTICLE_MAX_VELOCITY, lam_fit, CompressConfig.PSO_INERTIA)
+    pso = PSOController(num_particles, ranges, CompressConfig.PSO_PARTICLE_MAX_VELOCITY, CompressConfig.PSO_INERTIA, fit_controller)
 
     # loading if possible
     if save_data is not None and save_data.size != 0:
@@ -52,3 +72,4 @@ def compression_pso_optim(num_iterations:int, num_particles:int, ranges:list, be
 
     # compression
     return pso.run(num_iterations, lam_log, save_data, CompressConfig.PSO_LIMIT_POSITION, CompressConfig.PSO_LIMIT_VELOCITY ,verbose=CompressConfig.VERBOSE)
+    
