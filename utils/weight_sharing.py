@@ -1,10 +1,8 @@
 import torch
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 import pandas as pd
-import numpy as np
-import pandas as pd
-import numpy as np
 from sklearn.cluster import KMeans
 import math
 import time
@@ -102,29 +100,18 @@ class Layer:
         plt.figure(figsize=(18,6))
         plt.title(self.name)
         plt.xlabel(f'{self.name} layer weights')
-        plt.figure(figsize=(18,6))
-        plt.title(self.name)
-        plt.xlabel(f'{self.name} layer weights')
         plt.ylabel('count')
 
-        data = pd.DataFrame({
-            'weights': torch.flatten(self.weight.cpu()).detach().numpy(),
-            'cluster': point_labels if point_labels is not None else None   
-        })
-
-
-        data = pd.DataFrame({
-            'weights': torch.flatten(self.weight.cpu()).detach().numpy(),
-            'cluster': point_labels if point_labels is not None else None   
-        })
-
         sns.histplot(
-            data,
-            bins = 100,
+            data = pd.DataFrame({
+                'weights': torch.flatten(self.weight.cpu()).detach().numpy(),
+                'cluster': point_labels,
+            }),
             x = 'weights',
-            hue = 'cluster' if point_labels is not None else None
+            bins = 100,
+            hue = 'cluster' if point_labels is not None else None,
+            multiple = 'stack'
         )
-
 
         if cluster_centers is not None:
             for center in cluster_centers:
@@ -162,13 +149,9 @@ class Layer:
         mod_focus = 0 if mod_focus is None else mod_focus
         mod_spread = 0 if mod_spread is None else mod_spread
         
-        mod_focus = 0 if mod_focus is None else mod_focus
-        mod_spread = 0 if mod_spread is None else mod_spread
-        
         # getting the current weights and preparing them for clustering
         original_shape = self.weight.shape
         original_type = self.weight.dtype
-        device = self.weight.device
         device = self.weight.device
 
         numpy_weights = torch.flatten(self.weight.cpu()).detach().numpy()
@@ -193,33 +176,10 @@ class Layer:
 
         numpy_weights_2D = np.swapaxes(numpy_weights_2D, 0, 1)
 
-        # adjustment of distances by adding new dimension
-        numpy_weights_2D = np.vstack((
-            numpy_weights, 
-            mod_spread * np.ptp(numpy_weights) * np.tanh(mod_focus * (numpy_weights - np.mean(numpy_weights))) # adjustment to mean
-        ))
-
-        # plot the weights int the new dimension
-        if plot:
-            plt.figure(figsize=(18,6))
-            plt.scatter(numpy_weights_2D[0], numpy_weights_2D[1], marker="+", label='weights')
-            plt.axvline(x=np.mean(numpy_weights), color='r', label='mean')
-            plt.axvline(x=0, color='g', label='zero')
-            plt.title(f'{self.name} weights space for K-means clustering')
-            plt.xlabel('Original weights values')
-            plt.ylabel('Modified weights values')
-            plt.legend()
-            plt.show()
-
-        numpy_weights_2D = np.swapaxes(numpy_weights_2D, 0, 1)
-
         # clustering
         kmeans = KMeans(n_clusters=n_weights, random_state=42).fit(numpy_weights_2D)
 
-        kmeans = KMeans(n_clusters=n_weights, random_state=42).fit(numpy_weights_2D)
-
         if plot:
-            self.plot_weight(kmeans.cluster_centers_[:, [0]], kmeans.labels_)
             self.plot_weight(kmeans.cluster_centers_[:, [0]], kmeans.labels_)
         
         # precision reduction if possible
@@ -433,8 +393,6 @@ class WeightShare:
             print(prec_reduct)
             print(mods_focus)
             print(mods_spread)
-            print(mods_focus)
-            print(mods_spread)
 
             raise Exception('WeightShare share error - lists not matching')
 
@@ -520,12 +478,13 @@ class WeightShare:
         if prec_reduct is None:
             prec_reduct = [None for _ in self.model_layers]
 
-        best_focus_vals = [None for _ in range(len(self.model_layers))]
+        best_focus_vals = [None for _ in self.model_layers]
 
         # saving original weights and initial share
         for layer in self.model_layers:
             layer.set_reset_weight()
         
+        # sharing without modifications
         self.share(layer_clusters, layer_order=layer_order, prec_reduct=prec_reduct)
 
         for layer in layer_order:
@@ -533,7 +492,6 @@ class WeightShare:
             # layer init
             w_delta = []
             acc = []
-            device = self.model_layers[layer].weight.device
             #num_in_cluster_mean = len(org_weight) / SHARE_CLUSTERS[LAYER]
 
             for focus_val in mods_focus:
@@ -631,8 +589,7 @@ class WeightShare:
             raise Exception('Layer get_best_cluster_num error - Already altered weight cannot be precessed')
         
         # saving original data
-        original_model_params = copy.deepcopy(self.model.state_dict()) 
-        original_virt_weight_params = self.model_layers[layer_i].virt_weight_params
+        self.set_reset()
 
         output = []
 
@@ -646,10 +603,7 @@ class WeightShare:
             output.append((k, k_score))
 
             # returning original data
-            self.model.load_state_dict(copy.deepcopy(original_model_params))
-            self.model_layers[layer_i].virt_weight_params = original_virt_weight_params
-            self.model_layers[layer_i].weight.requires_grad = True
-            self.model_layers[layer_i].elem_size = None
+            self.reset()
 
         return output
 
@@ -660,7 +614,7 @@ class WeightShare:
         Args:
             layer_ranges (list): is the list of lists of the number of clusters wanted to be tested. 
                 Index of the list corresponds to an index of layer in the model.
-            perf_fcs (_type_): are functions that will test the performace.
+            perf_fcs (function): are functions that will test the performace.
             pre_perf_fc (_type_, optional): is a function that is performed before the test.
                 It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
@@ -678,8 +632,8 @@ class WeightShare:
 
         layer_perfs = []
 
-        for i in range(len(self.model_layers)):
-            layer_perfs.append(self.get_layer_cluster_nums_perf(i, layer_ranges[i], perf_fcs, pre_perf_fc, prec_rtype=prec_rtype))
+        for i, layer_range in enumerate(layer_ranges):
+            layer_perfs.append(self.get_layer_cluster_nums_perf(i, layer_range, perf_fcs, pre_perf_fc, prec_rtype=prec_rtype))
 
         return layer_perfs
 
@@ -721,7 +675,6 @@ class WeightShare:
         # compute performances if file not avalible
         else:
             perfs = self.get_layers_cluster_nums_perfs(layer_ranges, [perf_fc], pre_perf_fc, prec_rtype=prec_rtype)
-            perfs = self.get_layers_cluster_nums_perfs(layer_ranges, [perf_fc], pre_perf_fc, prec_rtype=prec_rtype)
             perfs = [[[y[0], y[1][0]] for y in x] for x in perfs]
 
         # save performaces if necessary
@@ -732,13 +685,13 @@ class WeightShare:
                 write.writerows(perfs)
 
         # get only the ranges that match performace needs
-        for i in range(len(perfs)):
+        for i, perf in enumerate(perfs):
             if perf_lim is not None:
-                perfs[i] = list(filter(lambda x: x[1] >= perf_lim, perfs[i]))
-            if max_num_range is not None and len(perfs[i]) > max_num_range:
-                perfs[i].sort(key = lambda x: x[1], reverse=True)
-                perfs[i] = perfs[i][:max_num_range]
-                perfs[i].sort(key = lambda x: x[0])
-            perfs[i] = [x[0] for x in perfs[i]]
+                perf = list(filter(lambda x: x[1] >= perf_lim, perf))
+            if max_num_range is not None and len(perf) > max_num_range:
+                perf.sort(key = lambda x: x[1], reverse=True)
+                perf = perf[:max_num_range]
+                perf.sort(key = lambda x: x[0])
+            perfs[i] = [x[0] for x in perf]
 
         return perfs

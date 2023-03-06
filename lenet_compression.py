@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import argparse
+import yaml
+import sys
 
 from data.mnist import MnistDataset
 from models.lenet.lenet import LeNet5
@@ -8,6 +10,7 @@ from utils.train import *
 from utils.weight_sharing import *
 from utils.plot import *
 from utils.fitness_controller import FitnessController
+from utils.genetic import dump_ga_config, load_ga_config
 
 from compress_optim import *
 
@@ -20,15 +23,30 @@ DEVICE = CompressConfig.DEVICE
 NET_TYPE = 'tanh'
 # net save path
 NET_PATH = './models/lenet/saves/lenet_tanh.save'
+# dataset settings
+DATA_PATH = './data'
 # optimization settings
 RANGE_OPTIMIZATION = True
 RANGE_OPTIMIZATION_TRESHOLD = 0.97
 RANGE_OPTIMIZATION_FILE = './results/lenet-tanh-layer-perf.csv'
 
 def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
+    """Lenet compression function.
+
+    Args:
+        compress_alg (str): is the optimizer algorithm for the optimization.
+        search_ranges (list): list of touple of cluster ranges for each layer.
+        num_iter (int): number of iterations for the algorithm.
+        num_pop (int): size of the population for algorithm.
+        show_plt (bool, optional): If True, the plot is shown. Defaults to False.
+        save_plt (bool, optional): If True, the plot is saved. Defaults to False.
+
+    Raises:
+        Exception: If unknown optimization algorithm is choosed.
+    """
 
     # initing the lenet model
-    dataset = MnistDataset(BATCH_SIZE, './data', val_split=0.5)
+    dataset = MnistDataset(BATCH_SIZE, DATA_PATH, val_split=0.5)
     model = LeNet5(N_CLASSES, NET_TYPE)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
@@ -44,6 +62,7 @@ def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:i
     # initing weightsharing
     ws_controller = WeightShare(model, lam_opt, lam_train, lam_test)
     ws_controller.set_reset()
+    lam_fitness_vals_fc = lambda i: fitness_vals_fc(i, ws_controller)
 
     # oprimizing search ranges
     lam_test_inp = lambda _ : get_accuracy(model, dataset.test_dl, DEVICE)
@@ -52,8 +71,9 @@ def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:i
             RANGE_OPTIMIZATION_TRESHOLD, savefile=RANGE_OPTIMIZATION_FILE)
 
     # defining fitness controller
-    fit_controll = FitnessController(CompressConfig.OPTIM_TARGET, fitness_vals_fc, fit_from_vals, 
-        target_max_offset=CompressConfig.OPTIM_TARGET_UPDATE_OFFSET , lock=CompressConfig.OPTIM_TARGET_LOCK)
+    fit_controll = FitnessController(CompressConfig.OPTIM_TARGET, lam_fitness_vals_fc, fit_from_vals, 
+        target_max_offset=CompressConfig.OPTIM_TARGET_UPDATE_OFFSET , lock=CompressConfig.OPTIM_TARGET_LOCK, 
+        target_limit=CompressConfig.OPTIM_TARGET_LOW_LIMIT)
 
     # compression part
     save_data = None
@@ -63,10 +83,10 @@ def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:i
         save_data = compression_pso_optim(num_iter, num_pop, search_ranges, before_loss, fit_controll)
     elif compress_alg == 'random':
         save_data = compression_random_optim(num_iter * num_pop, search_ranges, before_loss, fit_controll)
-    elif compress_alg == 'bh':
-        save_data = compression_bh_optim(num_iter, num_pop, search_ranges, before_loss)
+    elif compress_alg == 'blackhole':
+        save_data = compression_bh_optim(num_iter, num_pop, search_ranges, before_loss, fit_controll)
     else:
-        raise Exception('err')
+        raise Exception('err compress_lenet - unknown compress optimization algorithm')
 
     # plotting data
     plot_alcr(save_data)
@@ -86,7 +106,32 @@ if __name__ == '__main__':
     parser.add_argument('-lo', '--lower_range', metavar='N', type=int, default=1, help='sets the lower range for compression')
     parser.add_argument('-hp', '--hide', action='store_false', help='does not show the output plot')
     parser.add_argument('-sv', '--save', action='store_true', help='saves the output plot')
+    parser.add_argument('-cfs', '--config_save', type=argparse.FileType('w'), help='dumps current config in given file and ends')
+    parser.add_argument('-cfl', '--config_load', type=argparse.FileType('r'), help='loads config from given `.yaml` file')
     args = parser.parse_args()
+
+    # save config
+    if args.config_save is not None:
+        cfg = dump_comp_config()
+        cfg['ga'] = dump_ga_config()
+        cfg['net'] = {
+            'name': 'Le-Net',
+            'type': NET_TYPE,
+        }
+        cfg['compress space'] = {
+            'up': args.upper_range,
+            'down': args.lower_range,
+            'optimized': RANGE_OPTIMIZATION,
+            'opt tresh': RANGE_OPTIMIZATION_TRESHOLD,
+        }
+        yaml.dump(cfg, args.config_save)
+        sys.exit(0)
+
+    # load config
+    if args.config_load is not None:
+        cfg = yaml.safe_load(args.config_load)
+        load_comp_config(cfg)
+        load_ga_config(cfg['ga'])
 
     repr_range = [range(args.lower_range, args.upper_range) for _ in range(5)]
     compress_lenet(args.compressor, repr_range, args.num_iterations, args.num_population, args.hide, args.save)

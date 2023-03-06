@@ -1,4 +1,3 @@
-import torch.nn as nn
 import pandas as pd
 
 from utils.genetic import GeneticController

@@ -171,7 +171,7 @@ class Particle :
 class PSOController:
     def __init__(self, num_particles:int, particle_range:list, particle_max_velocity:list,
         inertia_c:float, fitness_cont:FitnessController, cognitive_c:float=2.05, social_c:float=2.05, 
-        BH_radius:float = None, BH_vel_tresh:float = None) -> None:
+        BH_radius:float = None, BH_vel_tresh:float = None, BH_repr_rad:bool = False) -> None:
         """Inits the PSO controller with its swarm. Also can be upgraded to Black Hole algorithm
         by specifying the radius and velocity theshold.
 
@@ -187,6 +187,7 @@ class PSOController:
                 where the paricles are absorbed by the best position.
             BH_vel_tresh (float, optional):Part of Black Hole algorithm upgrade. Defines the velocity theshold.
                 When some particle is slover than this speed, its absorbed by the best position.
+            TODO:
         """
 
         # set attributes
@@ -198,6 +199,7 @@ class PSOController:
         self.jump_start = False
         self.particle_range = particle_range
         self.BH_radius = BH_radius
+        self.BH_repr_rad = BH_repr_rad
         self.BH_vel_tresh = BH_vel_tresh
         self.fitness_controller = fitness_cont
 
@@ -322,13 +324,27 @@ class PSOController:
                     logger_fc(self)
 
             # blackhole algorithm upgrade
-            if self.BH_radius is not None and self.BH_vel_tresh is not None:
+            if (self.BH_radius is not None or self.BH_repr_rad) and self.BH_vel_tresh is not None:
+                print('BH check')
                 for particle in self.swarm:
                     if particle == best_particle:
                         continue
-                    if sqrt(np.sum(np.power((np.array(particle.position) - np.array(best_particle.position)), 2))) <= self.BH_radius and \
+                    
+                    # position radius path
+                    if self.BH_radius is not None and\
+                        sqrt(np.sum(np.power((np.array(particle.position) - np.array(best_particle.position)), 2))) <= self.BH_radius and \
                         np.sum(np.power(np.array(particle.velocity), 2)) <= self.BH_vel_tresh:
                         particle.rand_pos()
+                        if verbose:
+                            print('BH particle reset')
+
+                    # representation raduis path
+                    elif self.BH_repr_rad is not False and\
+                        particle.representation == best_particle.representation and\
+                        np.sum(np.power(np.array(particle.velocity), 2)) <= self.BH_vel_tresh:
+                        particle.rand_pos()
+                        if verbose:
+                            print('BH particle reset')
 
         # returning the best found representation
         best_representation = []

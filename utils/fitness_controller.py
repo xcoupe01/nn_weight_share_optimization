@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd
 
 class FitnessController:
-    def __init__(self, base_targs:list[float], get_fit_vals, fit_from_vals, fitness_targ_update_fc = None, target_max_offset:float = 0, lock:bool = False):
+    def __init__(self, base_targs:list[float], get_fit_vals, fit_from_vals, fitness_targ_update_fc = None, 
+        target_max_offset:list[float] = None, target_limit:list[float] = None ,lock:bool = False):
         """Inits the fitness controller.
 
         The fitness controler is desined to work with unreachable best possible target in some spectrum.
@@ -24,9 +25,16 @@ class FitnessController:
             get_fit_vals (function): Function, that takes the representation and gets the needed values to compute fitness.
             fit_from_vals (function): Function, that takes the values from previous function and computes the fitness.
             fitness_targ_update_fc (function, optional): Function that is triggered, when the target changes. Defaults to None.
-            target_max_offset (float, optional): New target offset. Defaults to 0.
+            target_max_offset (float, optional): New target offset. Defaults to None (all offsets are zero).
+            target_limit (list[floar], optional): Defines the lower bound in each dimenstion for point
+                to be considered as possible target (ie.: when you have possible target that have 0 acc and 32 compression
+                and you dont want it to be proceeded and taken as target for the compression, u set the acc limit to be 0.95
+                which means this point would not pass as target because 0 < 0.95). Defaults to None (No limits).
             lock (bool, optional): If true, the target does not move. Defaults to False.
         """
+
+        if target_max_offset is None:
+            target_max_offset = [0 for _ in base_targs]
 
         self.targ = np.array(base_targs)
         self.get_fit_vals = get_fit_vals
@@ -34,6 +42,7 @@ class FitnessController:
         self.fitness_targ_update_fc = fitness_targ_update_fc
         self.target_offset = target_max_offset
         self.lock = lock
+        self.target_limit = target_limit
 
     def update_targs(self, potential_targs:list[float], verbose:bool = False) -> bool:
         """Updates the target values to potential target values if the potentila target value is greater.
@@ -52,9 +61,16 @@ class FitnessController:
 
         change = False
 
+        # limiting points
+        if self.target_limit is not None:
+            for i, limit in enumerate(self.target_limit):
+                potential_targs = [x for x in potential_targs if x[i] > limit]
+
+        potential_targs = np.array(potential_targs).max(axis=0)
+
         # change the target
         for i in [i for i, x in enumerate(potential_targs >= self.targ) if x]:
-            self.targ[i] = potential_targs[i] + self.target_offset
+            self.targ[i] = potential_targs[i] + self.target_offset[i]
             change = True
 
         if verbose and change: print(f'Fitness target update to {self.targ}')
@@ -78,8 +94,7 @@ class FitnessController:
             fit_vals.append(self.get_fit_vals(individual))
 
         # updating the target
-        max_vals = np.array(fit_vals).max(axis=0)
-        if self.update_targs(max_vals, verbose) and self.fitness_targ_update_fc is not None:
+        if self.update_targs(fit_vals, verbose) and self.fitness_targ_update_fc is not None:
             for individual in individuals:
                 self.fitness_targ_update_fc(individual, self.targ)
 
@@ -98,11 +113,15 @@ class FitnessController:
         """
 
         # update the target
-        max_vals = [df['accuracy'].max(), df['compression'].max()]
-        self.update_targs(max_vals, verbose)
+        all_vals = np.transpose(np.array([df['accuracy'], df['compression']]))
+        self.update_targs(all_vals, verbose)
 
         # generate fitness column
-        df['fitness'] = 0
+        df['fitness'] = 0.0
         for i, row in df.iterrows():
             df['fitness'][i] = self.fit_from_vals(row, self.targ)
+
+    def update_targ_by_dfs(self, dfs:list[pd.DataFrame], verbose:bool):
         
+        for df in dfs:
+            self.fit_from_df(df, verbose=verbose)

@@ -9,6 +9,9 @@ class EvolConfig:
     MUTATION_ALGORITHM = lambda indiv, p : mutation_prob_for_each(indiv, p)                     # Set mutation algorithm
     MUTATION_PROBABILITY = 0.2                                                                  # Set mutation probability (depends also on used alg)
     NUM_ELITISTS = 1                                                                            # Set the number of elitist chromosomes
+    PAIRING_ALGORITHM_STR = 'roulette'                                                          # pairing algorithm text indication for experiment settings dump
+    CROSSOVER_ALGORITHM_STR = 'single point'                                                    # crossover algorithm text indication for experiment settings dump
+    MUTATION_ALGORITHM_STR = 'prob for each'                                                    # mutation algorithm text indication for experiment settings dump
 
 # -------------- breeding functions --------------
 
@@ -144,3 +147,30 @@ def mutation_prob_for_each(individual, p:float) -> None:
     for i in range(len(individual.chromosome)):
         if random.random() <= p:
             individual.chromosome[i] = random.choice(individual.possible_values[i])
+
+# -------------- config dump --------------
+
+def dump_ga_config() -> object:
+    """Creates object structure containing all the settings of the evolution config.
+    The functions are represented with corresponding string name.
+
+    Returns:
+        object: the save structure of the settings.
+    """
+
+    return {
+        'pairing': EvolConfig.PAIRING_ALGORITHM_STR,
+        'crossover': EvolConfig.CROSSOVER_ALGORITHM_STR,
+        'mutation': EvolConfig.MUTATION_ALGORITHM_STR,
+        'mut prob': EvolConfig.MUTATION_PROBABILITY,
+        'num elit': EvolConfig.NUM_ELITISTS,
+    }
+
+def load_ga_config(json:object) -> None:
+    """Loads the config from given json. It does not load the corresponding functions.
+
+    Args:
+        json (object): Is the object to be loaded from.
+    """
+    EvolConfig.MUTATION_PROBABILITY = json['mut prob']
+    EvolConfig.NUM_ELITISTS = json['num elit']

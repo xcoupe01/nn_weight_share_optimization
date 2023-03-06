@@ -1,4 +1,3 @@
-import torch.nn as nn
 import pandas as pd
 
 from utils.pso import PSOController
@@ -64,7 +63,8 @@ def compression_bh_optim(num_iterations:int, num_particles:int, ranges:list, bef
 
     # initing pso
     lam_log = lambda pso_cont, save_data : logger_fc(pso_cont, before_loss, save_data)
-    pso = PSOController(num_particles, ranges, CompressConfig.PSO_PARTICLE_MAX_VELOCITY, CompressConfig.PSO_INERTIA, fit_controller)
+    pso = PSOController(num_particles, ranges, CompressConfig.PSO_PARTICLE_MAX_VELOCITY, CompressConfig.PSO_INERTIA, fit_controller, 
+        BH_radius=CompressConfig.BH_RADIUS, BH_repr_rad=CompressConfig.BH_REPR_RAD, BH_vel_tresh=CompressConfig.BH_VEL_TRESH)
 
     # loading if possible
     if save_data is not None and save_data.size != 0:
