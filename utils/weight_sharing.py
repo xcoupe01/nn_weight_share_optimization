@@ -4,6 +4,7 @@ import numpy as np
 import seaborn as sns
 import pandas as pd
 from sklearn.cluster import KMeans
+from typing import Callable
 import math
 import time
 import copy
@@ -14,6 +15,7 @@ from utils.float_prec_reducer import FloatPrecReducer
 
 BITS_IN_BYTE = 8
 FLOAT8_SIGNIFICAND_LEN = 3
+DEFAULT_WS_LAYERS = (torch.nn.Conv1d, torch.nn.Conv2d, torch.nn.Conv3d, torch.nn.Linear)
 
 class Layer:
 
@@ -256,14 +258,23 @@ class Layer:
 
 class WeightShare:
 
-    def __init__(self, model: torch.nn.Module, opt_create, train, test) -> None:
-        """Initializes the weight share object.
+    def __init__(self, model: torch.nn.Module, 
+        test:Callable[[None], float] = None, 
+        opt_create:Callable[[torch.nn.Module], torch.optim.Optimizer] = None, 
+        train:Callable[[torch.optim.Optimizer, int], None] = None, 
+        shared_layer_types:tuple = DEFAULT_WS_LAYERS) -> None:
+        """Initializes the weight shate object.
 
         Args:
-            model (torch.nn.Module): is the mode thats going to be weight-shared.
-            opt_create (function): is a function that returns new optimizer for the given network.
-            train (function): is a function that trains the given network.
-            test (function): is a function that tests the given network.
+            model (torch.nn.Module): is the model thats going to be weight-shared.
+            test (Callable[[None], float], optional): is a function that tests the accuracy of a given network. 
+            If None, no tests are done and the accuracy reading will default to -1. Defaults to None.
+            opt_create (Callable[[torch.nn.Module], torch.optim.Optimizer], optional): is a function that returns new optimizer 
+                of the given network which is used before every training. If None no retraining will be conducted. Defaults to None.
+            train (Callable[[torch.optim.Optimizer, int], None], optional): is a function that trains the given network. 
+                If None no retraining will be conducted. Defaults to None.
+            shared_layer_types (tuple, optional): Layer types considered in weight sharing. 
+                Defaults to tuple containing 1D, 2D and 3D covoluitons and linear layers.
 
         Raises:
             Exception: if unknown net parameter is found.
@@ -276,10 +287,16 @@ class WeightShare:
         self.test = test
         self.float_res_reducer = FloatPrecReducer(FLOAT8_SIGNIFICAND_LEN)
 
+        # getting the names of layers to be considered in ws
+        layer_names = get_all_spec_layer_names(model=model, pytorch_ws_layers=shared_layer_types)
+
         # initing the internal representation of the layers
         for name, param in model.named_parameters():
             
             parsed_name = name.split('.')
+
+            if ".".join(parsed_name[:-1]) not in layer_names:
+                continue
 
             for layer in self.model_layers:
                 if layer.name == ".".join(parsed_name[:-1]):
@@ -411,6 +428,9 @@ class WeightShare:
         total_train = 0
         total_test = 0
 
+        if retrain_amount is not None and (self.opt_create is None or self.train is None) and verbose:
+            print('WeightShare share Warning - retrain will not be done, no train or opt_create functions given')
+
         for num, layer in enumerate(layer_order):
             
             share_start = time.time()
@@ -423,15 +443,17 @@ class WeightShare:
             total_share += time.time() - start_share
 
             # retrain phase
-            if retrain_amount[layer] is not None and retrain_amount[layer] > 0:
+            if retrain_amount[layer] is not None and retrain_amount[layer] > 0 \
+                and self.train is not None and self.opt_create is not None:
                 start_train = time.time()
                 optimizer = self.opt_create(self.model)
                 self.train(optimizer, retrain_amount[layer])
                 total_train += time.time() - start_train
 
-            start_test = time.time()    
-            model_accuracy = self.test()
-            total_test += time.time() - start_test
+            if self.test is not None:
+                start_test = time.time()    
+                model_accuracy = self.test()
+                total_test += time.time() - start_test
 
             share_duration = time.time() - share_start
             
@@ -442,13 +464,13 @@ class WeightShare:
                     f'Name: {self.model_layers[layer].name}\t'
                     f'Before params: {before_params}\t',
                     f'After params: {self.model_layers[layer].virt_weight_params}\t',
-                    f'Test accuracy: {model_accuracy:.2f}%'
+                    f'Test accuracy: {(model_accuracy if self.test is not None else -1):.2f}%'
                 )
 
         compression_rate = self.compression_rate()
 
         return {
-            'accuracy': model_accuracy, 
+            'accuracy': model_accuracy if self.test is not None else -1, 
             'compression': compression_rate,
             'times': {
                 'train': total_train,
@@ -472,6 +494,9 @@ class WeightShare:
         Returns:
             list: list of the best found focus modulations.
         """
+
+        if self.test is None:
+            raise Exception('WeightSharing finetuned_mod error - cannot finetune without test function')
 
         if layer_order is None:
             layer_order = range(len(self.model_layers))
@@ -695,3 +720,19 @@ class WeightShare:
             perfs[i] = [x[0] for x in perf]
 
         return perfs
+
+def get_all_spec_layer_names(model:torch.nn.Module, prev_name:str = '', pytorch_ws_layers:tuple = DEFAULT_WS_LAYERS):
+    result = []
+
+    # recursively explore net for layer names and types
+    if len(list(model.children())) > 0:
+        # explore childrens
+        for name, child in model.named_children():
+            new_name = get_all_spec_layer_names(child, prev_name + '.' + name, pytorch_ws_layers=pytorch_ws_layers)
+            if new_name is not None:
+                result += new_name
+    else:
+        if isinstance(model, pytorch_ws_layers):
+            # appends the names and removes the first char (dot)
+            result.append(prev_name[1:])
+    return result

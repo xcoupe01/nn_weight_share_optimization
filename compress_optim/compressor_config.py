@@ -1,5 +1,5 @@
 import math
-from utils.train import *
+from data.utils.mnist_utils import *
 from utils.weight_sharing import *
 
 class CompressConfig:

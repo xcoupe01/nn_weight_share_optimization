@@ -4,9 +4,8 @@ import argparse
 import yaml
 import sys
 
-from data.mnist import MnistDataset
-from models.lenet.lenet import LeNet5
-from data.utils.mnist_utils import *
+from data.imagenette import ImagenetteDataset
+from data.utils.imagenet_utils import *
 from utils.weight_sharing import *
 from utils.plot import *
 from utils.fitness_controller import FitnessController
@@ -15,27 +14,24 @@ from utils.genetic import dump_ga_config, load_ga_config
 from compress_optim import *
 
 # net train params - before compression
-LEARNING_RATE = 0.0001
 BATCH_SIZE = 32
-N_CLASSES = 10
-EPOCHS = 100
 DEVICE = CompressConfig.DEVICE
-NET_TYPE = 'tanh'
-# net save path
-NET_PATH = f'./models/lenet/saves/lenet_{NET_TYPE}.save'
+NET_TYPE = 'mobilenet_v2'
+NET_REPO = 'pytorch/vision:v0.10.0'
 # dataset settings
-DATA_PATH = './data'
+DATA_PATH = './data/imagenette'
+TOP_ACC = 1
 # optimization settings
 RANGE_OPTIMIZATION = True
-RANGE_OPTIMIZATION_TRESHOLD = 0.97
-RANGE_OPTIMIZATION_FILE = f'./models/lenet/saves/lenet_{NET_TYPE}_layer_perf.csv'
+RANGE_OPTIMIZATION_TRESHOLD = 0.60
+RANGE_OPTIMIZATION_FILE = f'./models/{NET_TYPE}/saves/{NET_TYPE}_layer_perf.csv'
 
-def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
+def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
     """Lenet compression function.
 
     Args:
         compress_alg (str): is the optimizer algorithm for the optimization.
-        search_ranges (list): list of touple of cluster ranges for each layer.
+        TODO: search_ranges (tuple): list of touple of cluster ranges for each layer.
         num_iter (int): number of iterations for the algorithm.
         num_pop (int): size of the population for algorithm.
         show_plt (bool, optional): If True, the plot is shown. Defaults to False.
@@ -45,30 +41,46 @@ def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:i
         Exception: If unknown optimization algorithm is choosed.
     """
 
-    # initing the lenet model
-    dataset = MnistDataset(BATCH_SIZE, DATA_PATH, val_split=0.5)
-    model = LeNet5(N_CLASSES, NET_TYPE)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    train_settings = [criterion, optimizer, dataset, EPOCHS, DEVICE, 1, True]
-    get_trained(model, NET_PATH, train_settings)
-    before_loss = get_accuracy(model, dataset.test_dl, DEVICE)
+    # initing the model
+    if CompressConfig.VERBOSE:
+        print('initing model')
 
-    # defining lenet hooks
-    lam_opt = lambda mod : torch.optim.Adam(mod.parameters(), lr=LEARNING_RATE)
-    lam_train = lambda opt, epochs : train_net(model, criterion, opt, dataset, epochs, device=DEVICE)
-    lam_test = lambda : get_accuracy(model, dataset.test_dl, DEVICE)
+    # ----------------------------------
+    dataset = ImagenetteDataset(BATCH_SIZE, DATA_PATH, val_split=0.99)
+    model = torch.hub.load(NET_REPO, NET_TYPE, pretrained=True)
+    #criterion = nn.CrossEntropyLoss()
+    #optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    #train_settings = [criterion, optimizer, dataset, EPOCHS, DEVICE, 1, True]
+    #get_trained(model, NET_PATH, train_settings)
+
+    # defining model hooks
+    lam_opt = None #lambda mod : torch.optim.Adam(mod.parameters(), lr=LEARNING_RATE)
+    lam_train = None #lambda opt, epochs : train_net(model, criterion, opt, dataset, epochs, device=DEVICE)
+    lam_test = lambda : get_accuracy(model, dataset.test_dl, DEVICE, topk=TOP_ACC)
+    # ----------------------------------
 
     # initing weightsharing
+    if CompressConfig.VERBOSE:
+        print('initing weight sharing')
     ws_controller = WeightShare(model, lam_test, lam_opt, lam_train)
     ws_controller.set_reset()
     lam_fitness_vals_fc = lambda i: fitness_vals_fc(i, ws_controller)
 
-    # optimizing search ranges
-    lam_test_inp = lambda _ : get_accuracy(model, dataset.test_dl, DEVICE)
+    # creating and optimizing search ranges
+    #repr_range = [range(args.lower_range, args.upper_range) for _ in range(5)]
+    low, up = search_ranges
+    search_ranges = [range(low, up) for _ in ws_controller.model_layers]
+    lam_test_inp = lambda _ : lam_test()
     if RANGE_OPTIMIZATION:
+        if CompressConfig.VERBOSE:
+            print('range optimization')
         search_ranges = ws_controller.get_optimized_layer_ranges(search_ranges, lam_test_inp, 
             RANGE_OPTIMIZATION_TRESHOLD, savefile=RANGE_OPTIMIZATION_FILE)
+
+    # get before loss
+    before_loss = lam_test()
+    if CompressConfig.VERBOSE:
+        print(f'before loss: {before_loss}')
 
     # defining fitness controller
     fit_controll = FitnessController(CompressConfig.OPTIM_TARGET, lam_fitness_vals_fc, fit_from_vals, 
@@ -136,5 +148,4 @@ if __name__ == '__main__':
         RANGE_OPTIMIZATION = cfg['compress space']['optimized']
         RANGE_OPTIMIZATION_TRESHOLD = cfg['compress space']['opt tresh']
 
-    repr_range = [range(args.lower_range, args.upper_range) for _ in range(5)]
-    compress_lenet(args.compressor, repr_range, args.num_iterations, args.num_population, args.hide, args.save)
+    compress_net(args.compressor, (args.lower_range, args.upper_range), args.num_iterations, args.num_population, args.hide, args.save)

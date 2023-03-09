@@ -4,6 +4,8 @@ results
 models/*/saves
 data/MNIST
 data/oxford-iiit-pet
+data/imagenet
+data/imagenette
 quant_tests/*.data
 .vscode
 

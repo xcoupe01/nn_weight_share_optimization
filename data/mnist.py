@@ -30,7 +30,6 @@ class MnistDataset:
         )
 
         # split validation to valid and test
-        
         val_split_len = int(len(valtest_dataset) * val_split)
         self.valid_dataset, self.test_dataset = random_split(
             valtest_dataset, 

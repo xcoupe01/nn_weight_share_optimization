@@ -1,4 +1,5 @@
 # inspired by: https://github.com/erykml/medium_articles/blob/master/Computer%20Vision/lenet5_pytorch.ipynb
+# for Le-Net
 
 import torch
 import matplotlib.pyplot as plt
