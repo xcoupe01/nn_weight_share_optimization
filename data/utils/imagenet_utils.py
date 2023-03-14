@@ -69,4 +69,4 @@ def get_accuracy(model:torch.nn.Module, data_loader:DataLoader, device:str='cpu'
             acc = accuracy(output, target, topk=(topk,))
             top.update(acc[0], data.size(0))
 
-    return top.avg.numpy().item(0)
+    return top.avg.cpu().numpy().item(0)
