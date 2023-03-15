@@ -10,6 +10,7 @@ import time
 import copy
 import csv
 import os
+import concurrent.futures
 
 from utils.float_prec_reducer import FloatPrecReducer
 
@@ -95,29 +96,13 @@ class Layer:
         Args:
             cluster_centers (list, optional): Is the cluster centers to be added. Defaults to None.
             point_labels (list, optional): Is the data labels to be displayed. Defaults to None.
-            point_labels (list, optional): Is the data labels to be displayed. Defaults to None.
         """
 
-        plt.clf()
-        plt.figure(figsize=(18,6))
-        plt.title(self.name)
-        plt.xlabel(f'{self.name} layer weights')
-        plt.ylabel('count')
-
-        sns.histplot(
-            data = pd.DataFrame({
-                'weights': torch.flatten(self.weight.cpu()).detach().numpy(),
-                'cluster': point_labels,
-            }),
-            x = 'weights',
-            bins = 100,
-            hue = 'cluster' if point_labels is not None else None,
-            multiple = 'stack'
-        )
-
-        if cluster_centers is not None:
-            for center in cluster_centers:
-                plt.axvline(center, color='r')
+        plot_weights(
+            torch.flatten(self.weight.cpu()).detach().numpy(), 
+            cluster_centers, 
+            point_labels,
+            self.name)
 
     def share_weight(self, n_weights:int, plot:bool = False, assign:bool = False, unlock:bool = True, prec_rtype:str = None, 
         mod_focus:float = None, mod_spread:float = None) -> None:
@@ -164,18 +149,10 @@ class Layer:
             mod_spread * np.ptp(numpy_weights) * np.tanh(mod_focus * (numpy_weights - np.mean(numpy_weights))) # adjustment to mean
         ))
 
-        # plot the weights int the new dimension
+        # plot the weights in the new dimension
         if plot:
-            plt.figure(figsize=(18,6))
-            plt.scatter(numpy_weights_2D[0], numpy_weights_2D[1], marker="+", label='weights')
-            plt.axvline(x=np.mean(numpy_weights), color='r', label='mean')
-            plt.axvline(x=0, color='g', label='zero')
-            plt.title(f'{self.name} weights space for K-means clustering')
-            plt.xlabel('Original weights values')
-            plt.ylabel('Modified weights values')
-            plt.legend()
-            plt.show()
-
+            plot_kmeans_space(numpy_weights_2D, self.name)
+            
         numpy_weights_2D = np.swapaxes(numpy_weights_2D, 0, 1)
 
         # clustering
@@ -196,7 +173,7 @@ class Layer:
             new_tensor = new_tensor.reshape(original_shape)
 
             if new_tensor.dtype != original_type:
-                new_tensor.type(original_type)
+                new_tensor = new_tensor.type(original_type)
 
             self.weight.data = new_tensor
             self.weight.requires_grad = unlock
@@ -206,25 +183,11 @@ class Layer:
                 self.elem_size = self.prec_reducer.get_prec_bytes(prec_rtype)
 
     def compression_rate(self, mapping_bits:int=None) -> float:
-        """Computes compression rate of the layer by following expression:
-
-        par: num of params in the weight tensor
-        bits1: amount of bits required to store the original value
-        bits1r: amoutn of bits required to store the original reduced value
-        bits2: amount of bits required to store the share value (key)
-        key: amount of unique shared values 
-        
-                  par * bits1
-        -----------------------------------
-        par * bits2 + key * (bits1r + bits2)
+        """Computes compression rate of the layer - see compute_cr() function to see details.
 
         Args:
             mapping_bits (int, optional): Sets the number of bits wanted to be used
                 as a key to the codebook (and in the weight matrix). Defaults to None.
-
-        Raises:
-            Exception: if the mapping_bits is seted and the number of elements is
-            higher than the mapping_bits can map.
 
         Returns:
             float: the compression rate of the layer.
@@ -234,27 +197,15 @@ class Layer:
         if self.weight.requires_grad:
             return 1
 
-        par = self.weight.numel()
-        bits1 = self.weight.element_size() * BITS_IN_BYTE
-        bits1r = self.elem_size * BITS_IN_BYTE if self.elem_size is not None else bits1
-        
-        # computing number of bits to represent the key to map
-        # in case there is only one unique value, the expression gives 0
-        # which breaks the rest of the calculation, so this fix is needed
-        bits2 = max(math.ceil(math.log(self.virt_weight_params) / math.log(2)), 1)
+        bits_w_old = self.weight.element_size() * BITS_IN_BYTE
 
-        if mapping_bits is not None:
-            if mapping_bits < bits2:
-                raise Exception('Layer compression_rate error - cannot be mapped to given bits')
-            bits2 = mapping_bits
-        
-        # computing the weight-key matrix
-        bits_map_key = par * bits2
-
-        # computing the weight mapping table 
-        bits_map_vals = self.virt_weight_params * (bits1r + bits2)
-
-        return (par * bits1) / (bits_map_key + bits_map_vals)
+        return compute_cr(
+            self.weight.numel(),
+            self.virt_weight_params,
+            bits_w_old,
+            self.elem_size * BITS_IN_BYTE if self.elem_size is not None else bits_w_old,
+            mapping_bits
+            )
 
 class WeightShare:
 
@@ -286,6 +237,7 @@ class WeightShare:
         self.train = train
         self.test = test
         self.float_res_reducer = FloatPrecReducer(FLOAT8_SIGNIFICAND_LEN)
+        self.compress_total = None
 
         # getting the names of layers to be considered in ws
         layer_names = get_all_spec_layer_names(model=model, pytorch_ws_layers=shared_layer_types)
@@ -337,6 +289,7 @@ class WeightShare:
     def compression_rate(self, mapping_bits:int=None) -> float:
         """Computes compression rate of the whole model.
         If non compression is made yet, 1 is returned (no compression).
+        Takes into account if the model is shared layerwise or modelwise.
 
         Args:
             mapping_bits (int, optional): Defines how many bits will have the key part of the 
@@ -345,6 +298,19 @@ class WeightShare:
         Returns:
             float: The compression rate of whole model.
         """
+
+        # if total share was done compute for whole model
+        if self.compress_total is not None:
+            
+            return compute_cr(
+                sum([l.weight.numel() for l in self.model_layers]),
+                self.compress_total['clusters'],
+                self.model_layers[0].weight.element_size() * BITS_IN_BYTE,
+                self.float_res_reducer.get_prec_bytes(self.compress_total['prec_type']),
+                mapping_bits
+            )
+        
+        # compute layer-wise compression
         layer_cr = [x.compression_rate(mapping_bits) for x in self.model_layers]
         return sum(layer_cr) / len(layer_cr)
 
@@ -383,6 +349,12 @@ class WeightShare:
                     - test: the model total test time
         """
 
+        def share_layer(l_index):
+            self.model_layers[l_index].share_weight(layer_clusters[l_index], assign=True, unlock=False, prec_rtype=prec_reduct[l_index], 
+                    mod_focus=mods_focus[l_index], mod_spread=mods_spread[l_index])
+            
+            print(f'layer {l_index} shared')
+
         # parameter check
         if  len(layer_clusters) != len(self.model_layers) or \
             layer_order is not None and (max(layer_order) >= len(self.model_layers) or \
@@ -392,8 +364,8 @@ class WeightShare:
             prec_reduct is not None and len(prec_reduct) != len(self.model_layers) or \
             mods_focus is not None and len(mods_focus) != len(self.model_layers) or \
             mods_spread is not None and len(mods_spread) != len(self.model_layers):
+    
         # parameter check
-
             print(
                 len(layer_clusters) != len(self.model_layers),
                 layer_order is not None and (max(layer_order) >= len(self.model_layers) or \
@@ -428,9 +400,9 @@ class WeightShare:
         total_train = 0
         total_test = 0
 
-        if retrain_amount is not None and (self.opt_create is None or self.train is None) and verbose:
+        if not all(v is None for v in retrain_amount) and (self.opt_create is None or self.train is None) and verbose:
             print('WeightShare share Warning - retrain will not be done, no train or opt_create functions given')
-
+            
         for num, layer in enumerate(layer_order):
             
             share_start = time.time()
@@ -450,11 +422,6 @@ class WeightShare:
                 self.train(optimizer, retrain_amount[layer])
                 total_train += time.time() - start_train
 
-            if self.test is not None:
-                start_test = time.time()    
-                model_accuracy = self.test()
-                total_test += time.time() - start_test
-
             share_duration = time.time() - share_start
             
             if verbose:
@@ -464,8 +431,13 @@ class WeightShare:
                     f'Name: {self.model_layers[layer].name}\t'
                     f'Before params: {before_params}\t',
                     f'After params: {self.model_layers[layer].virt_weight_params}\t',
-                    f'Test accuracy: {(model_accuracy if self.test is not None else -1):.2f}%'
                 )
+
+        # test acc
+        if self.test is not None:
+            start_test = time.time()    
+            model_accuracy = self.test()
+            total_test += time.time() - start_test
 
         compression_rate = self.compression_rate()
 
@@ -474,6 +446,106 @@ class WeightShare:
             'compression': compression_rate,
             'times': {
                 'train': total_train,
+                'share': total_share,
+                'test': total_test
+            }
+        }
+
+    def share_total(self, model_clusters:int, mod_focus:int = 0, mod_spread:int = 0, prec_rtype:str = None, assign:bool = True, 
+        plot:bool = False, unlock:bool = False) -> dict:
+        """Shares the model not by layers but as a whole - takes all the weights in the model, clusters them and 
+        the result is only one key-value table for the whole model.
+
+        Args:
+            model_clusters (int): Is the number of clusters to be share to for all the model weights.
+            mod_focus (int, optiona): Is the kmeans space focus modulation parameter. Defaults to 0.
+            mod_spread (int, optiona): Is the kmeans spread modulation parameter. Defaults to 0.
+            prec_rtype (str, optional): Is the precision reduction type for the values. Defaults to None.
+            assign (bool, optional): If true, the new weights are assigned to the model. Defaults to True.
+            plot (bool, optional): If True, plots of the weights are shown. Defaults to False.
+            unlock (bool, optional): If True, the model will be trainable after share. Defaults to False.
+
+        Raises:
+            Exception: If the model was already shared and locked, it cannot be shared and an Exception is rised.
+
+        Returns:
+            dict: dictionary that contents with information about the sharing.
+            The format is like so:
+                accuracy: the model accuracy after compression
+                compresion: the model compression rate
+                time: 
+                    - train: the model total retrain time
+                    - share: the model total share time
+                    - test: the model total test time
+        """
+
+        # init timers
+        total_share = 0
+        total_test = 0
+        start_share = time.time()
+
+        # load all weights        
+        numpy_weights = np.array([])
+        for layer in self.model_layers:
+            if not layer.weight.requires_grad:
+                raise Exception('WeightShare share_total error - already locked')
+            numpy_weights = np.append(numpy_weights, torch.flatten(layer.weight.cpu()).detach().numpy())
+
+        # adjustment of distances by adding new dimension
+        numpy_weights_2D = np.vstack((
+            numpy_weights, 
+            mod_spread * np.ptp(numpy_weights) * np.tanh(mod_focus * (numpy_weights - np.mean(numpy_weights))) # adjustment to mean
+        ))
+
+        # plot the weights in the new dimension
+        if plot:
+            plot_kmeans_space(numpy_weights_2D, 'All')
+
+        # clustering
+        numpy_weights_2D = np.swapaxes(numpy_weights_2D, 0, 1)
+        kmeans = KMeans(n_clusters=model_clusters, random_state=42).fit(numpy_weights_2D)
+
+        if plot:
+            plot_weights(numpy_weights, kmeans.cluster_centers_[:, [0]], kmeans.labels_, 'All')
+
+        # precision reduction
+        processed_cluster_centers = kmeans.cluster_centers_
+        if self.float_res_reducer is not None and prec_rtype is not None:
+            processed_cluster_centers = self.float_res_reducer.reduce_list(processed_cluster_centers, prec_rtype)
+
+        # assigning weights if wanted
+        if assign:
+            new_weights = np.array([processed_cluster_centers[i][0] for i in kmeans.labels_])
+            new_weights = np.split(new_weights, np.cumsum([l.weight.numel() for l in self.model_layers[:-1]]))
+            for i, layer in enumerate(self.model_layers):
+                new_tensor = torch.tensor(new_weights[i]).to(layer.weight.device)
+                new_tensor = new_tensor.reshape(layer.weight.shape)
+
+                if new_tensor.dtype != layer.weight.dtype:
+                    new_tensor = new_tensor.type(layer.weight.dtype)
+
+                layer.weight.data = new_tensor
+                layer.weight.requires_grad = unlock
+
+            # accuracy test
+            if self.test is not None:
+                start_test = time.time()    
+                model_accuracy = self.test()
+                total_test += time.time() - start_test
+
+            # set to compressed
+            self.compress_total = {
+                'prec_type': prec_rtype if prec_rtype is not None else 'f4',
+                'clusters': model_clusters,
+            }
+            compression_rate = self.compression_rate()
+
+        total_share += time.time() - start_share
+
+        return {
+            'accuracy': model_accuracy if self.test and assign is not None else -1, 
+            'compression': compression_rate if assign else -1,
+            'times': {
                 'share': total_share,
                 'test': total_test
             }
@@ -721,7 +793,18 @@ class WeightShare:
 
         return perfs
 
-def get_all_spec_layer_names(model:torch.nn.Module, prev_name:str = '', pytorch_ws_layers:tuple = DEFAULT_WS_LAYERS):
+def get_all_spec_layer_names(model:torch.nn.Module, prev_name:str = '', pytorch_ws_layers:tuple = DEFAULT_WS_LAYERS) -> list:
+    """Recusive funtion to find the names of layers of specified types.
+
+    Args:
+        model (torch.nn.Module): Is the model to be searched in.
+        prev_name (str, optional): Is used in the recursion - tells the name of the parent to the child. Defaults to ''.
+        pytorch_ws_layers (tuple, optional): The chosen layer types to be found. Defaults to DEFAULT_WS_LAYERS.
+
+    Returns:
+        list: List of names of the wanted layers.
+    """
+
     result = []
 
     # recursively explore net for layer names and types
@@ -736,3 +819,103 @@ def get_all_spec_layer_names(model:torch.nn.Module, prev_name:str = '', pytorch_
             # appends the names and removes the first char (dot)
             result.append(prev_name[1:])
     return result
+
+def plot_weights(weights:np.array, cluster_centers:list = None, point_labels:list = None, name:str = '') -> None:
+    """Plots histogram of given weights.
+
+    Args:
+        weights (np.array): Is the array of the model weights.
+        cluster_centers (list, optional): Is list of cluster centers (given by kmeans). If none, cluster centers are not displayed.
+            Defaults to None.
+        point_labels (list, optional): Cluster labels for each point (given by kmeans). If none, weight labels are not displayed. 
+            Defaults to None.
+        name (str, optional): _description_. Defaults to ''.
+    """
+
+    plt.clf()
+    plt.figure(figsize=(18,6))
+    plt.title(f'{name} weights')
+    plt.xlabel(f'{name} layer weights')
+    plt.ylabel('count')
+
+    sns.histplot(
+        data = pd.DataFrame({
+            'weights': weights,
+            'cluster': point_labels,
+        }),
+        x = 'weights',
+        bins = 100,
+        hue = 'cluster' if point_labels is not None else None,
+        multiple = 'stack'
+    )
+
+    # add cluster center lines, if possible
+    if cluster_centers is not None:
+        for center in cluster_centers:
+            plt.axvline(center, color='r')
+
+def plot_kmeans_space(numpy_weights_2D, name:str = '') -> None:
+    """Plots the kmeans weight space before clustering.
+
+    Args:
+        numpy_weights_2D (np.array): Is the numpy array of model weights in 2D (second dimension used to modulate distances)
+        name (str, optional): Is the layer name or any nyme printed in plot title. Defaults to ''.
+    """
+
+    plt.figure(figsize=(18,6))
+    plt.scatter(numpy_weights_2D[0], numpy_weights_2D[1], marker="+", label='weights')
+    plt.axvline(x=np.mean(numpy_weights_2D[0]), color='r', label='mean')
+    plt.axvline(x=0, color='g', label='zero')
+    plt.title(f'{name} weights space for K-means clustering')
+    plt.xlabel('Original weights values')
+    plt.ylabel('Modified weights values')
+    plt.legend()
+    plt.show()
+
+def compute_cr(num_w_old:int, num_w_new:int, bits_w_old:int, bits_w_new:int, mapping_bits:int = None) -> float:
+    """Computes compression rate of the layer by following expression:
+
+        num_w_old: num of params in the weight tensor
+        bits_w_old: amount of bits required to store the original value
+        bits_w_new: amount of bits required to store the new weight value (key to table)
+        bits_k: amount of bits required to store the share value (value of the key)
+        key: amount of unique shared values 
+        
+                      num_w_old * bits_w_org
+        ----------------------------------------------------
+        num_w_old * bits_w_new + key * (bits_w_new + bits_k)
+
+        Args:
+            num_w_old (int): number of old parameters.
+            num_w_new (int): number of new parameters (clusters).
+            bits_w_old (int): amount of bits to store the original value.
+            bits_w_new (int): amount of bits required to store the new value in ws table (precision reduction).
+            mapping_bits (int, optional): Sets the number of bits wanted to be used
+                as a key to the codebook (and in the weight matrix). Defaults to None.
+
+        Raises:
+            Exception: if the mapping_bits is seted and the number of elements is
+            higher than the mapping_bits can map.
+
+        Returns:
+            float: the compression rate for the given parameters.
+        """
+
+    # computing number of bits to represent the key to map
+    # in case there is only one unique value, the expression gives 0
+    # which breaks the rest of the calculation, so this fix is needed
+    bits_k = max(math.ceil(math.log(num_w_new) / math.log(2)), 1)
+
+    # setting map bits
+    if mapping_bits is not None:
+        if mapping_bits < bits_k:
+            raise Exception('compute_cr error - cannot be mapped to given bits')
+        bits_k = mapping_bits
+    
+    # computing the weight-key matrix
+    bits_map_key = num_w_old * bits_k
+
+    # computing the weight mapping table 
+    bits_map_vals = num_w_new * (bits_w_new + bits_k)
+
+    return (num_w_old * bits_w_old) / (bits_map_key + bits_map_vals)
