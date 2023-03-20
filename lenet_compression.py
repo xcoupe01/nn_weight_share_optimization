@@ -98,7 +98,7 @@ def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:i
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(prog='lenet_compression.py', description='Optimizes compression of LeNet-5 CNN by different algorithms.'+
-    'The outputs are storedn in the results folder.')
+    'The outputs are stored in the results folder.')
     parser.add_argument('-comp', '--compressor', choices=['random', 'pso', 'genetic', 'blackhole'], default='random', help='choose the compression algorithm')
     parser.add_argument('-pop', '--num_population', metavar='N', type=int, default=12, help='set the population count')
     parser.add_argument('-its', '--num_iterations', metavar='N', type=int, default=30, help='set the iteration count')

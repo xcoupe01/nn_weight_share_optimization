@@ -16,7 +16,6 @@ from compress_optim import *
 # net train params - before compression
 BATCH_SIZE = 32
 DEVICE = CompressConfig.DEVICE
-NET_TYPE = 'mobilenet_v2'
 NET_REPO = 'pytorch/vision:v0.10.0'
 # dataset settings
 DATA_PATH = './data/imagenette'
@@ -24,14 +23,15 @@ TOP_ACC = 1
 # optimization settings
 RANGE_OPTIMIZATION = True
 RANGE_OPTIMIZATION_TRESHOLD = 0.60
-RANGE_OPTIMIZATION_FILE = f'./models/{NET_TYPE}/saves/{NET_TYPE}_layer_perf.csv'
+RANGE_OPTIMIZATION_FILE = lambda nn: f'./models/{nn}/saves/{nn}_layer_perf.csv'
 
-def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
+def compress_net(net_name:str, compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
     """Lenet compression function.
 
     Args:
+        net_name (str): is the name of the net to be loaded from pytorch.
         compress_alg (str): is the optimizer algorithm for the optimization.
-        TODO: search_ranges (tuple): list of touple of cluster ranges for each layer.
+        search_ranges (tuple): list of touple of cluster ranges for each layer.
         num_iter (int): number of iterations for the algorithm.
         num_pop (int): size of the population for algorithm.
         show_plt (bool, optional): If True, the plot is shown. Defaults to False.
@@ -47,11 +47,9 @@ def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:in
 
     # ----------------------------------
     dataset = ImagenetteDataset(BATCH_SIZE, DATA_PATH, val_split=0.99)
-    model = torch.hub.load(NET_REPO, NET_TYPE, pretrained=True)
+    model = torch.hub.load(NET_REPO, net_name, pretrained=True)
     #criterion = nn.CrossEntropyLoss()
     #optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    #train_settings = [criterion, optimizer, dataset, EPOCHS, DEVICE, 1, True]
-    #get_trained(model, NET_PATH, train_settings)
 
     # defining model hooks
     lam_opt = None #lambda mod : torch.optim.Adam(mod.parameters(), lr=LEARNING_RATE)
@@ -67,7 +65,6 @@ def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:in
     lam_fitness_vals_fc = lambda i: fitness_vals_fc(i, ws_controller)
 
     # creating and optimizing search ranges
-    #repr_range = [range(args.lower_range, args.upper_range) for _ in range(5)]
     low, up = search_ranges
     search_ranges = [range(low, up) for _ in ws_controller.model_layers]
     lam_test_inp = lambda _ : lam_test()
@@ -75,7 +72,7 @@ def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:in
         if CompressConfig.VERBOSE:
             print('range optimization')
         search_ranges = ws_controller.get_optimized_layer_ranges(search_ranges, lam_test_inp, 
-            RANGE_OPTIMIZATION_TRESHOLD, savefile=RANGE_OPTIMIZATION_FILE)
+            RANGE_OPTIMIZATION_TRESHOLD, savefile=RANGE_OPTIMIZATION_FILE(net_name))
 
     # get before loss
     before_loss = lam_test()
@@ -109,8 +106,8 @@ def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:in
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(prog='lenet_compression.py', description='Optimizes compression of LeNet-5 CNN by different algorithms.'+
-    'The outputs are storedn in the results folder.')
+    parser = argparse.ArgumentParser(prog='net_compression.py', description='Optimizes compression of any CNN that processes imagenet '+ 
+        'by different algorithms. The outputs are stored in the results folder. See compatible networs here https://pytorch.org/vision/stable/models.html')
     parser.add_argument('-comp', '--compressor', choices=['random', 'pso', 'genetic', 'blackhole'], default='random', help='choose the compression algorithm')
     parser.add_argument('-pop', '--num_population', metavar='N', type=int, default=12, help='set the population count')
     parser.add_argument('-its', '--num_iterations', metavar='N', type=int, default=30, help='set the iteration count')
@@ -120,15 +117,18 @@ if __name__ == '__main__':
     parser.add_argument('-sv', '--save', action='store_true', help='saves the output plot')
     parser.add_argument('-cfs', '--config_save', type=argparse.FileType('w'), help='dumps current config in given file and ends')
     parser.add_argument('-cfl', '--config_load', type=argparse.FileType('r'), help='loads config from given `.yaml` file')
+    parser.add_argument('-nt', '--net', type='str', default='mobilenet_v2', help='model selected for compression from pytorch model zoo')
     args = parser.parse_args()
+
+    net_name = parser.net
 
     # save config
     if args.config_save is not None:
         cfg = dump_comp_config()
         cfg['ga'] = dump_ga_config()
         cfg['net'] = {
-            'name': 'Le-Net',
-            'type': NET_TYPE,
+            'name': net_name,
+            'type': None,
         }
         cfg['compress space'] = {
             'up': args.upper_range,
@@ -144,8 +144,8 @@ if __name__ == '__main__':
         cfg = yaml.safe_load(args.config_load)
         load_comp_config(cfg)
         load_ga_config(cfg['ga'])
-        NET_TYPE = cfg['net']['type']
+        net_name = cfg['net']['name']
         RANGE_OPTIMIZATION = cfg['compress space']['optimized']
         RANGE_OPTIMIZATION_TRESHOLD = cfg['compress space']['opt tresh']
 
-    compress_net(args.compressor, (args.lower_range, args.upper_range), args.num_iterations, args.num_population, args.hide, args.save)
+    compress_net(net_name, args.compressor, (args.lower_range, args.upper_range), args.num_iterations, args.num_population, args.hide, args.save)

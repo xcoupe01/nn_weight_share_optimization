@@ -13,7 +13,9 @@ Implemented:
 - float precision reduction
 - dynamic fitness target
 - finetuning via k-means space modulation
+- model-wise compression
 
 Nets tried:
 - LeNet-5
 - Mobilenet_v2
+- ResNet-18

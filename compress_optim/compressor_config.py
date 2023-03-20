@@ -70,7 +70,7 @@ class CompressConfig:
     # bh config
     BH_PARTICLE_MAX_VELOCITY = [4 for _ in range(5)]
     BH_RADIUS = None
-    BH_VEL_TRESH = 1
+    BH_VEL_TRESH = 0.25
     BH_REPR_RAD = True
     BH_SAVE_FILE = './results/lenet_BH_save.csv'
     BH_LIMIT_VELOCITY = True

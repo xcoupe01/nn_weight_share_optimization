@@ -10,13 +10,16 @@ import time
 import copy
 import csv
 import os
-import concurrent.futures
+from joblib import parallel_backend
 
 from utils.float_prec_reducer import FloatPrecReducer
 
+# some default settings for the sharing
 BITS_IN_BYTE = 8
 FLOAT8_SIGNIFICAND_LEN = 3
 DEFAULT_WS_LAYERS = (torch.nn.Conv1d, torch.nn.Conv2d, torch.nn.Conv3d, torch.nn.Linear)
+KMEANS_N_JOBS_TREAD = 4     # tells how many jobs can kmeans use
+MIN_SAVED_BITS = 1          # value 0 or 1 - determines computation in cr - see compute_cr function
 
 class Layer:
 
@@ -156,7 +159,8 @@ class Layer:
         numpy_weights_2D = np.swapaxes(numpy_weights_2D, 0, 1)
 
         # clustering
-        kmeans = KMeans(n_clusters=n_weights, random_state=42).fit(numpy_weights_2D)
+        with parallel_backend('threading', n_jobs=KMEANS_N_JOBS_TREAD):
+            kmeans = KMeans(n_clusters=n_weights, random_state=42).fit(numpy_weights_2D)
 
         if plot:
             self.plot_weight(kmeans.cluster_centers_[:, [0]], kmeans.labels_)
@@ -291,6 +295,13 @@ class WeightShare:
         If non compression is made yet, 1 is returned (no compression).
         Takes into account if the model is shared layerwise or modelwise.
 
+        The compression is computed in following steps:
+        1) compute all the compression rates of all the layers.
+        2) compute a mean of all the compressions.
+
+        It is not weighted mean in the second step becase the size 
+        of the layer is already taken into account in the first step.
+
         Args:
             mapping_bits (int, optional): Defines how many bits will have the key part of the 
             compression table. Defaults to None.
@@ -348,12 +359,6 @@ class WeightShare:
                     - share: the model total share time
                     - test: the model total test time
         """
-
-        def share_layer(l_index):
-            self.model_layers[l_index].share_weight(layer_clusters[l_index], assign=True, unlock=False, prec_rtype=prec_reduct[l_index], 
-                    mod_focus=mods_focus[l_index], mod_spread=mods_spread[l_index])
-            
-            print(f'layer {l_index} shared')
 
         # parameter check
         if  len(layer_clusters) != len(self.model_layers) or \
@@ -904,7 +909,8 @@ def compute_cr(num_w_old:int, num_w_new:int, bits_w_old:int, bits_w_new:int, map
     # computing number of bits to represent the key to map
     # in case there is only one unique value, the expression gives 0
     # which breaks the rest of the calculation, so this fix is needed
-    bits_k = max(math.ceil(math.log(num_w_new) / math.log(2)), 1)
+    # can be altered by the MIN_SAVED_BITS parameter
+    bits_k = max(math.ceil(math.log(num_w_new) / math.log(2)), MIN_SAVED_BITS)
 
     # setting map bits
     if mapping_bits is not None:

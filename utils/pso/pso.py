@@ -115,10 +115,16 @@ class Particle :
             limit_velocity (bool, optional): tells if the velocity should be limied. Defaults to True.
         """
 
+        # my best position yet check
+        if self.my_best is None:
+            my_best_pos = self.position
+        else:
+            my_best_pos = self.my_best.position
+
         # compute new velocity
         for i in range(len(self.velocity)):
             self.velocity[i] = self.inertia_c * self.velocity[i] + \
-                self.cognitive_c * random.uniform(0, 1) * (self.my_best.position[i] - self.position[i]) + \
+                self.cognitive_c * random.uniform(0, 1) * (my_best_pos[i] - self.position[i]) + \
                 self.social_c * random.uniform(0, 1) * (swarm_best_pos[i] - self.position[i])
             # velocity limitation
             if limit_velocity and self.velocity[i] > self.max_velocity[i]:
@@ -187,7 +193,8 @@ class PSOController:
                 where the paricles are absorbed by the best position.
             BH_vel_tresh (float, optional):Part of Black Hole algorithm upgrade. Defines the velocity theshold.
                 When some particle is slover than this speed, its absorbed by the best position.
-            TODO:
+            BH_repr_rad (float, optional): If True, BH_radius is not taken into account and instead if 
+                the representation is the same as best position, the particle is absorbed. Defaults to False.
         """
 
         # set attributes
@@ -202,6 +209,7 @@ class PSOController:
         self.BH_repr_rad = BH_repr_rad
         self.BH_vel_tresh = BH_vel_tresh
         self.fitness_controller = fitness_cont
+        self.max_vel_vect = sqrt(np.sum(np.power(np.array(particle_max_velocity), 2)))
 
         # init swarm
         for _ in range(num_particles):
@@ -325,15 +333,14 @@ class PSOController:
 
             # blackhole algorithm upgrade
             if (self.BH_radius is not None or self.BH_repr_rad) and self.BH_vel_tresh is not None:
-                print('BH check')
                 for particle in self.swarm:
                     if particle == best_particle:
                         continue
                     
                     # position radius path
                     if self.BH_radius is not None and\
-                        sqrt(np.sum(np.power((np.array(particle.position) - np.array(best_particle.position)), 2))) <= self.BH_radius and \
-                        np.sum(np.power(np.array(particle.velocity), 2)) <= self.BH_vel_tresh:
+                        np.linalg.norm(np.array(particle.position) - np.array(best_particle.position)) <= self.BH_radius and \
+                        np.linalg.norm(particle.velocity) <= (self.BH_vel_tresh * self.max_vel_vect):
                         particle.rand_pos()
                         if verbose:
                             print('BH particle reset')
@@ -341,7 +348,7 @@ class PSOController:
                     # representation raduis path
                     elif self.BH_repr_rad is not False and\
                         particle.representation == best_particle.representation and\
-                        np.sum(np.power(np.array(particle.velocity), 2)) <= self.BH_vel_tresh:
+                        np.linalg.norm(particle.velocity) <= (self.BH_vel_tresh * self.max_vel_vect):
                         particle.rand_pos()
                         if verbose:
                             print('BH particle reset')
