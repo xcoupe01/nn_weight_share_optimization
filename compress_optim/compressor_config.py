@@ -6,19 +6,26 @@ class CompressConfig:
     # shared config
     SAVE_EVERY = 1
     VERBOSE = True
-    SHARE_ORDER = [0, 1, 2, 3, 4]
+    SHARE_ORDER = None #[0, 1, 2, 3, 4]
     RETRAIN_AMOUNT = None #[0, 0, 0, 0, 0]
-    PRECISION_REDUCTION = None #['f4', 'f4', 'f4', 'f4', 'f4']
+    PRECISION_REDUCTION = 'f4'
     CLUST_MOD_FOCUS = None #[0, 0, 0, 0, 0]
     CLUST_MOD_SPREAD = None #[0, 0, 0, 0, 0]
+    TOP_K_ACC = 1
     DEVICE = 'cpu'
-    OPTIM_TARGET = [1.0, 18.0]
+    # optim target
+    OPTIM_TARGET = [0.1, 1.0]
     OPTIM_TARGET_LOW_LIMIT = [0.97, 1.0]
     OPTIM_TARGET_LOCK = False
-    OPTIM_TARGET_UPDATE_OFFSET = [0.1, 0.1]
+    OPTIM_TARGET_UPDATE_OFFSET = [0.001, 0.1]
+    # net settings
+    NET_TYPE = 'mobilenet_v2'
+    # range optim
+    RANGE_OPTIMIZATION = True
+    RANGE_OPTIMIZATION_TRESHOLD = 0.01
 
     # genetic config
-    EVOL_SAVE_FILE = './results/lenet_GA_save.csv'
+    EVOL_SAVE_FILE = './results/GA_save.csv'
     EVOL_DATA = {
         'generation': [],
         'chromosome': [],
@@ -41,7 +48,7 @@ class CompressConfig:
 
     # pso config
     PSO_PARTICLE_MAX_VELOCITY = [4 for _ in range(5)]
-    PSO_SAVE_FILE = './results/lenet_PSO_save.csv'
+    PSO_SAVE_FILE = './results/PSO_save.csv'
     PSO_LIMIT_VELOCITY = True
     PSO_LIMIT_POSITION = True
     PSO_INERTIA = 0.8
@@ -72,7 +79,7 @@ class CompressConfig:
     BH_RADIUS = None
     BH_VEL_TRESH = 0.25
     BH_REPR_RAD = True
-    BH_SAVE_FILE = './results/lenet_BH_save.csv'
+    BH_SAVE_FILE = './results/BH_save.csv'
     BH_LIMIT_VELOCITY = True
     BH_LIMIT_POSITION = True
     BH_INERTIA = 0.8
@@ -99,7 +106,7 @@ class CompressConfig:
     }
 
     # random config
-    RND_SAVE_FILE = './results/lenet_RND_save.csv'
+    RND_SAVE_FILE = './results/RND_save.csv'
     RND_DATA = {
         'representation': [],
         'accuracy': [],
@@ -116,6 +123,21 @@ class CompressConfig:
         'share_t': 'float32',
         'train_t': 'float32',
         'acc_t': 'float32'
+    }
+
+    # total share config
+    TOTAL_SAVE_FILE = f'./results/complete_{NET_TYPE}_share_{PRECISION_REDUCTION[0]}.csv'
+    TOTAL_DATA = {
+        'num_vals': [],
+        'compression': [],
+        'accuracy': [],
+        'inertia': [],
+    }
+    TOTAL_DATA_TYPES = {
+        'num_vals': 'uint8',
+        'compression': 'float32',
+        'accuracy': 'float32',
+        'inertia': 'float32',
     }
 
 def dump_comp_config() -> object:
@@ -136,6 +158,7 @@ def dump_comp_config() -> object:
             'share order': CompressConfig.SHARE_ORDER,
             'retrain': CompressConfig.RETRAIN_AMOUNT,
             'prec red': CompressConfig.PRECISION_REDUCTION,
+            'top k acc': CompressConfig.TOP_K_ACC,
             'modulation': {
                 'focus': CompressConfig.CLUST_MOD_FOCUS,
                 'spread': CompressConfig.CLUST_MOD_SPREAD,
@@ -157,6 +180,13 @@ def dump_comp_config() -> object:
             'radius': CompressConfig.BH_RADIUS,
             'repr radius': CompressConfig.BH_REPR_RAD,
             'vel tresh': CompressConfig.BH_VEL_TRESH,
+        },
+        'net':{
+            'type': CompressConfig.NET_TYPE
+        },
+        'compress space': {
+            'optimized': CompressConfig.RANGE_OPTIMIZATION,
+            'opt tresh': CompressConfig.RANGE_OPTIMIZATION_TRESHOLD,
         }
     }
 
@@ -174,9 +204,10 @@ def load_comp_config(json:object) -> None:
     #ws load
     CompressConfig.SHARE_ORDER = json['ws settings']['share order']
     CompressConfig.RETRAIN_AMOUNT = json['ws settings']['retrain']
-    CompressConfig.PRECISION_REDUCTION = json['ws settings']['prec red']
+    CompressConfig.PRECISION_REDUCTION = json['ws settings']['prec red'] if json['ws settings']['prec red'] is not None else 'f4' 
     CompressConfig.CLUST_MOD_FOCUS = json['ws settings']['modulation']['focus']
     CompressConfig.CLUST_MOD_SPREAD = json['ws settings']['modulation']['spread']
+    CompressConfig.TOP_K_ACC = json['ws settings']['top k acc']
     #rnd load
     #ga load
     #pso load
@@ -192,6 +223,10 @@ def load_comp_config(json:object) -> None:
     CompressConfig.BH_RADIUS = json['bh']['radius']
     CompressConfig.BH_REPR_RAD = json['bh']['repr radius']
     CompressConfig.BH_VEL_TRESH = json['bh']['vel tresh']
+    #net load
+    CompressConfig.NET_TYPE = json['net']['type']
+    CompressConfig.RANGE_OPTIMIZATION = json['compress space']['optimized']
+    CompressConfig.RANGE_OPTIMIZATION_TRESHOLD = json['compress space']['opt tresh']
 
 def fitness_vals_fc(individual, ws_controller:WeightShare):
     """Base values for computing fitness getter.
@@ -209,12 +244,14 @@ def fitness_vals_fc(individual, ws_controller:WeightShare):
 
     # get representation
     repres = individual.chromosome if hasattr(individual, 'chromosome') else individual.representation
+
+    prec_reduct_list = [CompressConfig.PRECISION_REDUCTION for _ in ws_controller.model_layers]
     
     # share weigts by particle
     if individual.data is None:
         individual.data = ws_controller.share(repres, CompressConfig.SHARE_ORDER, CompressConfig.RETRAIN_AMOUNT, 
-        prec_reduct=CompressConfig.PRECISION_REDUCTION, mods_focus=CompressConfig.CLUST_MOD_FOCUS, 
-        mods_spread=CompressConfig.CLUST_MOD_SPREAD)
+        prec_reduct=prec_reduct_list, mods_focus=CompressConfig.CLUST_MOD_FOCUS, 
+        mods_spread=CompressConfig.CLUST_MOD_SPREAD, verbose=True)
     
     return [individual.data['accuracy'], individual.data['compression']]
 
@@ -229,4 +266,4 @@ def fit_from_vals(data:list[float], targ_vals:list[float]):
         float: The outut fitness.
     """
 
-    return 1 / math.sqrt(pow(1 - (data['accuracy'] - 0.9)/0.1, 2) + pow(1 - (data['compression']/targ_vals[1]), 2))
+    return 1 / math.sqrt(pow(1 - (data['accuracy']/targ_vals[0]), 2) + pow(1 - (data['compression']/targ_vals[1]), 2))

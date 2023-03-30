@@ -7,8 +7,8 @@ from math import sqrt
 from utils.fitness_controller import FitnessController
 
 class Particle :
-    def __init__(self, possible_values:list, max_velocity:list, 
-        inertia_c:float, cognitive_c: float, social_c:float, position:list=None, velocity:list = None) -> None:
+    def __init__(self, possible_values:list, max_velocity:list, inertia_c:float, cognitive_c: float, 
+        social_c:float, position:list=None, velocity:list = None) -> None:
         """Inits particle object in order to do PSO optimization.
 
         Args:
@@ -43,6 +43,7 @@ class Particle :
         self.cognitive_c = cognitive_c
         self.social_c = social_c
         self.data = None
+        self.save_only = False  # when True, the my best is unactive
 
         # loading position if defined
         if position is not None and velocity is not None:
@@ -153,6 +154,8 @@ class Particle :
         """Updates the particles fitness and its best position fitness by
         given fitness function.
 
+        If save_only is set to true, the my_best position is not updated.
+
         Args:
             fit_func (function): if the function to compute the fitness from with the particles data.
 
@@ -168,7 +171,7 @@ class Particle :
             self.my_best.fitness = fit_func(self.my_best.data)
 
         # update my best
-        if self.my_best is None or self.my_best.fitness < self.fitness:
+        if not self.save_only and (self.my_best is None or self.my_best.fitness < self.fitness):
             self.my_best = copy.deepcopy(self)
             self.my_best.my_best = None
 
@@ -306,6 +309,8 @@ class PSOController:
 
         # initing best swarm position and fitness
         best_particle:Particle = max(self.swarm, key=lambda p: p.my_best.fitness).my_best
+        # set save only to not compute my_best of the best particle
+        best_particle.save_only = True
         
         start_from = 1 if self.jump_start else 2
         if verbose: 
@@ -316,9 +321,17 @@ class PSOController:
             for particle in self.swarm:
                 particle.move(best_particle.position, limit_position, limit_velocity)
             
-            self.fitness_controller.compute_fit(self.swarm, verbose=verbose)
+            # ensure fitness update of the possibly detached best_particle
+            self.fitness_controller.compute_fit([*self.swarm, best_particle], verbose=verbose)
 
-            best_particle = max(self.swarm, key=lambda p: p.my_best.fitness).my_best
+            # this is here because of BH update - can happen that the particle with the
+            # best my_best is reseted, but this link should be intact if it is still the 
+            # best found swarm position
+            best_particle_candidat = max(self.swarm, key=lambda p: p.my_best.fitness).my_best
+            if best_particle_candidat.fitness > best_particle.fitness:
+                best_particle = best_particle_candidat
+                # set save only to not compute my_best of the best particle
+                best_particle.save_only = True
 
             self.time += 1
             if verbose:
@@ -333,6 +346,7 @@ class PSOController:
 
             # blackhole algorithm upgrade
             if (self.BH_radius is not None or self.BH_repr_rad) and self.BH_vel_tresh is not None:
+                reseted_particles_count = 0
                 for particle in self.swarm:
                     if particle == best_particle:
                         continue
@@ -342,16 +356,17 @@ class PSOController:
                         np.linalg.norm(np.array(particle.position) - np.array(best_particle.position)) <= self.BH_radius and \
                         np.linalg.norm(particle.velocity) <= (self.BH_vel_tresh * self.max_vel_vect):
                         particle.rand_pos()
-                        if verbose:
-                            print('BH particle reset')
+                        reseted_particles_count += 1
 
                     # representation raduis path
                     elif self.BH_repr_rad is not False and\
                         particle.representation == best_particle.representation and\
                         np.linalg.norm(particle.velocity) <= (self.BH_vel_tresh * self.max_vel_vect):
                         particle.rand_pos()
-                        if verbose:
-                            print('BH particle reset')
+                        reseted_particles_count += 1
+                
+                if verbose and reseted_particles_count > 0:
+                    print(f'BH {reseted_particles_count} {"particles" if reseted_particles_count > 1 else "particle"} reset')
 
         # returning the best found representation
         best_representation = []

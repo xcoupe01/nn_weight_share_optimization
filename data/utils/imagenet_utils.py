@@ -4,34 +4,38 @@ from torch.utils.data import DataLoader
 # reference,
 # https://github.com/pytorch/examples/blob/master/imagenet/main.py
 # Thank you.
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
+    
     def __init__(self, name, fmt=':f'):
         self.name = name
         self.fmt = fmt
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.val = 0
         self.avg = 0
         self.sum = 0
         self.count = 0
 
-    def update(self, val, n=1):
+    def update(self, val:float, n:int=1) -> None:
         self.val = val
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
 
-    def __str__(self):
+    def __str__(self) -> str:
         fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
         return fmtstr.format(**self.__dict__)
 
 # reference,
 # https://github.com/leaderj1001/MobileNetV3-Pytorch/blob/2cf3efa64d00c45e9ac61c3ef362396e9700fdb8/main.py#L117
 # Thank you!
+
 def accuracy(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""
+
     with torch.no_grad():
         maxk = max(topk)
         batch_size = target.size(0)
@@ -47,12 +51,23 @@ def accuracy(output, target, topk=(1,)):
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
 
-def get_accuracy(model:torch.nn.Module, data_loader:DataLoader, device:str='cpu', topk=1):
-    '''
-    Function for computing the accuracy of the predictions over the entire data_loader
-    '''
-    
-    top = AverageMeter('Acc@1', ':6.2f')
+def get_accuracy(model:torch.nn.Module, data_loader:DataLoader, device:str='cpu', topk:int=1) -> float:
+    """Function for computing the accuracy of the predictions over the entire data_loader.
+
+    The top k means that if the correct solution is among the top k (k means number) nets guesses,
+    its counted as correctly guessed. 
+
+    Args:
+        model (torch.nn.Module): Is the model to test the accuracy on.
+        data_loader (DataLoader): Is the data loader to test the models accuracy on.
+        device (str, optional): Is the device used for the calculation. Defaults to 'cpu'.
+        topk (int, optional): Is the top k accuracy setting. Defaults to 1.
+
+    Returns:
+        float: the accuracy percentage.
+    """
+
+    top = AverageMeter(f'Acc@{topk}', ':6.2f')
 
     model.eval()
     with torch.no_grad():

@@ -5,12 +5,12 @@ from utils.weight_sharing import *
 from utils.fitness_controller import FitnessController
 from .compressor_config import CompressConfig
 
-def logger_fc(pso_cont:PSOController, before_loss:float, save_data:pd.DataFrame=None) -> pd.DataFrame:
+def logger_fc(pso_cont:PSOController, before_acc:float, save_data:pd.DataFrame=None) -> pd.DataFrame:
     """Logger function for Black Hole search
 
     Args:
         pso_cont (PSOController): Is the PSO controller which data are goind to be logged.
-        before_loss (float): Before loss of the net to compute acculacy loss.
+        before_acc (float): Before accuracy of the net to compute accuracy loss.
         save_data (pd.DataFrame, optional): Is the dataframe where the data is going to be saved. Defaults to None.
 
     Returns:
@@ -29,7 +29,7 @@ def logger_fc(pso_cont:PSOController, before_loss:float, save_data:pd.DataFrame=
         new_data['representation'].append(particle.representation)
         new_data['velocity'].append(particle.velocity)
         new_data['accuracy'].append(particle.data['accuracy'])
-        new_data['accuracy_loss'].append(before_loss - particle.data['accuracy'])
+        new_data['accuracy_loss'].append(before_acc - particle.data['accuracy'])
         new_data['compression'].append(particle.data['compression'])
         new_data['share_t'].append(particle.data['times']['share'])
         new_data['train_t'].append(particle.data['times']['train'])

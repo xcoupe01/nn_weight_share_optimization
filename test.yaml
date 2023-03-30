@@ -1,0 +1,56 @@
+bh:
+  inertia: 0.8
+  limit pos: true
+  limit vel: true
+  max vel:
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  radius: null
+  repr radius: true
+  vel tresh: 0.25
+compress space:
+  down: 1
+  opt tresh: 0.01
+  optimized: true
+  up: 51
+ga:
+  crossover: single point
+  mut prob: 0.2
+  mutation: prob for each
+  num elit: 1
+  pairing: roulette
+net:
+  type: mobilenet_v2
+pso:
+  inertia: 0.8
+  limit pos: true
+  limit vel: true
+  max vel:
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+rnd: {}
+target:
+  lock: false
+  point:
+  - 0.1
+  - 1.0
+  update limit:
+  - 0.97
+  - 1.0
+  update offset:
+  - 0.001
+  - 0.1
+ws settings:
+  modulation:
+    focus: null
+    spread: null
+  prec red: f4
+  retrain: null
+  share order: null
+  top k acc: 1

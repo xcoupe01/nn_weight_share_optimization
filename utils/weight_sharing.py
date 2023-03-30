@@ -40,6 +40,7 @@ class Layer:
         self.elem_size = None
         self.reset_weight_vals = None
         self.reset_weight_vals = None
+        self.clust_inertia = 0
 
     def __repr__(self) -> str:
         return "Layer(" + self.name + ")"
@@ -58,10 +59,11 @@ class Layer:
         """
 
         self.reset_weight_vals = {
-            'weights': copy.deepcopy(torch.flatten(self.weight.cpu()).detach().numpy()),
+            'weights': torch.flatten(torch.clone(self.weight).cpu()).detach().numpy(),
             'elem_size': self.elem_size,
             'grad': self.weight.requires_grad,
             'virt_num_param': self.virt_weight_params,
+            'clust_inertia': self.clust_inertia,
         }
 
     def reset_weight(self) -> None:
@@ -81,7 +83,7 @@ class Layer:
         self.virt_weight_params = self.reset_weight_vals['virt_num_param']
         self.elem_size = self.reset_weight_vals['elem_size']
         self.weight.requires_grad = self.reset_weight_vals['grad']
-        
+        self.clust_inertia = self.reset_weight_vals['clust_inertia']
 
     def set_bias(self, bias:torch.Tensor) -> None:
         """Sets the bias and corresponding data
@@ -108,7 +110,7 @@ class Layer:
             self.name)
 
     def share_weight(self, n_weights:int, plot:bool = False, assign:bool = False, unlock:bool = True, prec_rtype:str = None, 
-        mod_focus:float = None, mod_spread:float = None) -> None:
+        mod_focus:float = None, mod_spread:float = None, n_clust_jobs:int=KMEANS_N_JOBS_TREAD) -> None:
         """Runs clustering algorithm to determine the centroinds of given number of clustert, then
         computes the correct weight tensor for the network.
 
@@ -124,6 +126,8 @@ class Layer:
                 the more is the modification focused on the center point. Defaults to None (== 0.0).
             mod_spread (float, optional): Modifier of the clustering space - 0 means not modigied, the larger the number,
                 the more is the the modification spreaded (most spread is around the focus point). Defaults to None (== 0.0).
+            n_clust_jobs (int, optional): Specifies the multiprocessing of clustering. Děfaults to KMEANS_N_JOBS_THREAD specified
+                in the source code.
 
             The k-means `y` space modification is calculated by following expression:
 
@@ -159,20 +163,24 @@ class Layer:
         numpy_weights_2D = np.swapaxes(numpy_weights_2D, 0, 1)
 
         # clustering
-        with parallel_backend('threading', n_jobs=KMEANS_N_JOBS_TREAD):
+        with parallel_backend('threading', n_jobs=n_clust_jobs):
             kmeans = KMeans(n_clusters=n_weights, random_state=42).fit(numpy_weights_2D)
 
-        if plot:
-            self.plot_weight(kmeans.cluster_centers_[:, [0]], kmeans.labels_)
+        self.clust_inertia = kmeans.inertia_
+
+        # reduction of additional dimension
+        processed_cluster_centers = np.concatenate(kmeans.cluster_centers_[:, [0]])
         
-        # precision reduction if possible
-        processed_cluster_centers = kmeans.cluster_centers_
+        # precision reduction if possible - reduce to the important dimesion
         if self.prec_reducer is not None and prec_rtype is not None:
             processed_cluster_centers = self.prec_reducer.reduce_list(processed_cluster_centers, prec_rtype)
+        
+        if plot:
+            self.plot_weight(processed_cluster_centers, kmeans.labels_)
 
         if assign:
             # assigning and locking the new shared tensor
-            new_tensor = [processed_cluster_centers[i][0] for i in kmeans.labels_]
+            new_tensor = [processed_cluster_centers[i] for i in kmeans.labels_]
             new_tensor = torch.tensor(new_tensor).to(device)
             new_tensor = new_tensor.reshape(original_shape)
 
@@ -326,7 +334,7 @@ class WeightShare:
         return sum(layer_cr) / len(layer_cr)
 
     def share(self, layer_clusters:list, layer_order:list = None, retrain_amount:list = None, prec_reduct:list = None, mods_focus:list = None, 
-        mods_spread:list = None, verbose:bool = False) -> dict:
+        mods_spread:list = None, verbose:bool = False, n_clust_jobs:int = KMEANS_N_JOBS_TREAD) -> dict:
         """Shares the entire model in a given orger to a given number of weight clusters for each layer
         and retrains the model by a given amount.
 
@@ -345,6 +353,8 @@ class WeightShare:
             mods_spread (list, optional): If not None, it defines the clustering space modification for each layer
                 The modification is described in the Layer.share function as mod_spread parameter. Defaults to None.
             verbose (bool, optional): To print information about the sharing during the execution. Defaults to False.
+            n_clust_jobs (int, optional): Specifies the multiprocessing of clustering. Děfaults to KMEANS_N_JOBS_THREAD specified
+                in the source code.
 
         Raises:
             Exception: if the input parameters are bad (lists do not correspond).
@@ -416,7 +426,7 @@ class WeightShare:
             # layer share phase
             start_share = time.time()
             self.model_layers[layer].share_weight(layer_clusters[layer], assign=True, unlock=False, prec_rtype=prec_reduct[layer], 
-                mod_focus=mods_focus[layer], mod_spread=mods_spread[layer])
+                mod_focus=mods_focus[layer], mod_spread=mods_spread[layer], n_clust_jobs=n_clust_jobs)
             total_share += time.time() - start_share
 
             # retrain phase
@@ -449,6 +459,7 @@ class WeightShare:
         return {
             'accuracy': model_accuracy if self.test is not None else -1, 
             'compression': compression_rate,
+            'inertias': [l.clust_inertia for l in self.model_layers],
             'times': {
                 'train': total_train,
                 'share': total_share,
@@ -457,7 +468,7 @@ class WeightShare:
         }
 
     def share_total(self, model_clusters:int, mod_focus:int = 0, mod_spread:int = 0, prec_rtype:str = None, assign:bool = True, 
-        plot:bool = False, unlock:bool = False) -> dict:
+        plot:bool = False, unlock:bool = False, n_clust_jobs:int = KMEANS_N_JOBS_TREAD) -> dict:
         """Shares the model not by layers but as a whole - takes all the weights in the model, clusters them and 
         the result is only one key-value table for the whole model.
 
@@ -469,6 +480,8 @@ class WeightShare:
             assign (bool, optional): If true, the new weights are assigned to the model. Defaults to True.
             plot (bool, optional): If True, plots of the weights are shown. Defaults to False.
             unlock (bool, optional): If True, the model will be trainable after share. Defaults to False.
+            n_clust_jobs (int, optional): Specifies the multiprocessing of clustering. Děfaults to KMEANS_N_JOBS_THREAD specified
+                in the source code.
 
         Raises:
             Exception: If the model was already shared and locked, it cannot be shared and an Exception is rised.
@@ -508,19 +521,22 @@ class WeightShare:
 
         # clustering
         numpy_weights_2D = np.swapaxes(numpy_weights_2D, 0, 1)
-        kmeans = KMeans(n_clusters=model_clusters, random_state=42).fit(numpy_weights_2D)
+        with parallel_backend('threading', n_jobs=n_clust_jobs):
+            kmeans = KMeans(n_clusters=model_clusters, random_state=42).fit(numpy_weights_2D)
 
-        if plot:
-            plot_weights(numpy_weights, kmeans.cluster_centers_[:, [0]], kmeans.labels_, 'All')
+        # reduction of additional dimension
+        processed_cluster_centers = np.concatenate(kmeans.cluster_centers_[:, [0]])
 
         # precision reduction
-        processed_cluster_centers = kmeans.cluster_centers_
         if self.float_res_reducer is not None and prec_rtype is not None:
             processed_cluster_centers = self.float_res_reducer.reduce_list(processed_cluster_centers, prec_rtype)
 
+        if plot:
+            plot_weights(numpy_weights, processed_cluster_centers, kmeans.labels_, 'All')
+        
         # assigning weights if wanted
         if assign:
-            new_weights = np.array([processed_cluster_centers[i][0] for i in kmeans.labels_])
+            new_weights = np.array([processed_cluster_centers[i] for i in kmeans.labels_])
             new_weights = np.split(new_weights, np.cumsum([l.weight.numel() for l in self.model_layers[:-1]]))
             for i, layer in enumerate(self.model_layers):
                 new_tensor = torch.tensor(new_weights[i]).to(layer.weight.device)
@@ -550,6 +566,7 @@ class WeightShare:
         return {
             'accuracy': model_accuracy if self.test and assign is not None else -1, 
             'compression': compression_rate if assign else -1,
+            'inertia': kmeans.inertia_,
             'times': {
                 'share': total_share,
                 'test': total_test
@@ -559,6 +576,7 @@ class WeightShare:
     def finetuned_mod(self, layer_clusters:list, mods_focus:list, mods_spread:list, layer_order:list = None, prec_reduct:list = None,
         plot:bool = False) -> list:
         """Tryes to get the best shared net by modulating the space. Computationaly intesive to execute!
+        Needs to have the original net without modifications at the begining.
 
         Args:
             layer_clusters (list): number of clusters for each layer.
@@ -583,8 +601,7 @@ class WeightShare:
         best_focus_vals = [None for _ in self.model_layers]
 
         # saving original weights and initial share
-        for layer in self.model_layers:
-            layer.set_reset_weight()
+        self.set_reset()
         
         # sharing without modifications
         self.share(layer_clusters, layer_order=layer_order, prec_reduct=prec_reduct)
@@ -593,6 +610,7 @@ class WeightShare:
 
             # layer init
             w_delta = []
+            inertia = []
             acc = []
             #num_in_cluster_mean = len(org_weight) / SHARE_CLUSTERS[LAYER]
 
@@ -607,6 +625,7 @@ class WeightShare:
 
                 post_share_weights = torch.flatten(self.model_layers[layer].weight.cpu()).detach().numpy()
                 w_delta.append(np.sum(np.abs(post_share_weights - self.model_layers[layer].reset_weight_vals['weights'])))
+                inertia.append(self.model_layers[layer].clust_inertia)
                 acc.append(self.test())
 
             # saving the best focus value and setting the net to this val
@@ -619,20 +638,28 @@ class WeightShare:
 
             # plot
             if plot:
-                fig, ax1 = plt.subplots()
+                fig = plt.figure(figsize=(18, 7))
+                plt.suptitle(self.model_layers[layer].name)
 
-                color = 'tab:red'
-                ax1.set_xlabel('focus modulation')
-                ax1.set_ylabel('weight delta', color=color)
-                ax1.plot(mods_focus, w_delta, color=color)
-                ax1.tick_params(axis='y', labelcolor=color)
+                for i in range(1, 3):
+                    
+                    ax1 = plt.subplot(1, 2, i)
+                    color = 'tab:red'
+                    ax1.set_xlabel('focus modulation')
+                    ax1.set_ylabel('accuracy', color=color)
+                    ax1.plot(mods_focus, acc, color=color)
+                    ax1.tick_params(axis='y', labelcolor=color)
 
-                ax2 = ax1.twinx()
+                    ax2 = ax1.twinx()
 
-                color = 'tab:blue'
-                ax2.set_ylabel('accuracy', color=color)
-                ax2.plot(mods_focus, acc, color=color)
-                ax2.tick_params(axis='y', labelcolor=color)
+                    color = 'tab:blue'
+                    if i == 1:
+                        ax2.set_ylabel('clustering inertia', color=color)
+                        ax2.plot(mods_focus, inertia, color=color)
+                    else:
+                        ax2.set_ylabel('weight delta', color=color)
+                        ax2.plot(mods_focus, w_delta, color=color)
+                    ax2.tick_params(axis='y', labelcolor=color)
 
                 fig.tight_layout()
                 plt.show()

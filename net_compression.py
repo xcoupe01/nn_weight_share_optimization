@@ -15,21 +15,16 @@ from compress_optim import *
 
 # net train params - before compression
 BATCH_SIZE = 32
-DEVICE = CompressConfig.DEVICE
 NET_REPO = 'pytorch/vision:v0.10.0'
 # dataset settings
 DATA_PATH = './data/imagenette'
-TOP_ACC = 1
 # optimization settings
-RANGE_OPTIMIZATION = True
-RANGE_OPTIMIZATION_TRESHOLD = 0.60
-RANGE_OPTIMIZATION_FILE = lambda nn: f'./models/{nn}/saves/{nn}_layer_perf.csv'
+RANGE_OPTIMIZATION_FILE = lambda nn, prec: f'./models/{nn}/saves/{nn}_layer_perf_{prec}.csv'
 
-def compress_net(net_name:str, compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
+def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
     """Lenet compression function.
 
     Args:
-        net_name (str): is the name of the net to be loaded from pytorch.
         compress_alg (str): is the optimizer algorithm for the optimization.
         search_ranges (tuple): list of touple of cluster ranges for each layer.
         num_iter (int): number of iterations for the algorithm.
@@ -47,15 +42,20 @@ def compress_net(net_name:str, compress_alg:str, search_ranges:tuple, num_iter:i
 
     # ----------------------------------
     dataset = ImagenetteDataset(BATCH_SIZE, DATA_PATH, val_split=0.99)
-    model = torch.hub.load(NET_REPO, net_name, pretrained=True)
+    model = torch.hub.load(NET_REPO, CompressConfig.NET_TYPE, pretrained=True)
     #criterion = nn.CrossEntropyLoss()
     #optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     # defining model hooks
     lam_opt = None #lambda mod : torch.optim.Adam(mod.parameters(), lr=LEARNING_RATE)
-    lam_train = None #lambda opt, epochs : train_net(model, criterion, opt, dataset, epochs, device=DEVICE)
-    lam_test = lambda : get_accuracy(model, dataset.test_dl, DEVICE, topk=TOP_ACC)
+    lam_train = None #lambda opt, epochs : train_net(model, criterion, opt, dataset, epochs, device= CompressConfig.DEVICE)
+    lam_test = lambda : get_accuracy(model, dataset.test_dl, CompressConfig.DEVICE, topk=CompressConfig.TOP_K_ACC)
     # ----------------------------------
+
+    # get before acc
+    before_acc = lam_test()
+    if CompressConfig.VERBOSE:
+        print(f'before loss: {before_acc}')
 
     # initing weightsharing
     if CompressConfig.VERBOSE:
@@ -64,45 +64,54 @@ def compress_net(net_name:str, compress_alg:str, search_ranges:tuple, num_iter:i
     ws_controller.set_reset()
     lam_fitness_vals_fc = lambda i: fitness_vals_fc(i, ws_controller)
 
+    # if total share, executed here
+    if compress_alg == 'total':
+        compression_total(range(low, up), before_acc, ws_controller)
+        return
+
     # creating and optimizing search ranges
     low, up = search_ranges
     search_ranges = [range(low, up) for _ in ws_controller.model_layers]
     lam_test_inp = lambda _ : lam_test()
-    if RANGE_OPTIMIZATION:
+    if CompressConfig.RANGE_OPTIMIZATION:
         if CompressConfig.VERBOSE:
             print('range optimization')
-        search_ranges = ws_controller.get_optimized_layer_ranges(search_ranges, lam_test_inp, 
-            RANGE_OPTIMIZATION_TRESHOLD, savefile=RANGE_OPTIMIZATION_FILE(net_name))
-
-    # get before loss
-    before_loss = lam_test()
-    if CompressConfig.VERBOSE:
-        print(f'before loss: {before_loss}')
+        search_ranges = ws_controller.get_optimized_layer_ranges(
+            search_ranges, 
+            lam_test_inp, 
+            CompressConfig.RANGE_OPTIMIZATION_TRESHOLD, 
+            savefile=RANGE_OPTIMIZATION_FILE(CompressConfig.NET_TYPE, CompressConfig.PRECISION_REDUCTION),
+            prec_rtype=CompressConfig.PRECISION_REDUCTION)
 
     # defining fitness controller
     fit_controll = FitnessController(CompressConfig.OPTIM_TARGET, lam_fitness_vals_fc, fit_from_vals, 
-        target_max_offset=CompressConfig.OPTIM_TARGET_UPDATE_OFFSET , lock=CompressConfig.OPTIM_TARGET_LOCK, 
+        target_update_offset=CompressConfig.OPTIM_TARGET_UPDATE_OFFSET , lock=CompressConfig.OPTIM_TARGET_LOCK, 
         target_limit=CompressConfig.OPTIM_TARGET_LOW_LIMIT)
+    
+    # search space check
+    if any([len(x) == 0 for x in search_ranges]):
+        raise Exception('error - no search range !! - ', search_ranges)
 
     # compression part
     save_data = None
     if compress_alg == 'genetic':
-        save_data = compression_genetic_optim(num_iter, num_pop, search_ranges, before_loss, fit_controll)
+        save_data = compression_genetic_optim(num_iter, num_pop, search_ranges, before_acc, fit_controll)
     elif compress_alg == 'pso':
-        save_data = compression_pso_optim(num_iter, num_pop, search_ranges, before_loss, fit_controll)
+        save_data = compression_pso_optim(num_iter, num_pop, search_ranges, before_acc, fit_controll)
     elif compress_alg == 'random':
-        save_data = compression_random_optim(num_iter * num_pop, search_ranges, before_loss, fit_controll)
+        save_data = compression_random_optim(num_iter * num_pop, search_ranges, before_acc, fit_controll)
     elif compress_alg == 'blackhole':
-        save_data = compression_bh_optim(num_iter, num_pop, search_ranges, before_loss, fit_controll)
+        save_data = compression_bh_optim(num_iter, num_pop, search_ranges, before_acc, fit_controll)
     else:
         raise Exception('err compress_lenet - unknown compress optimization algorithm')
 
     # plotting data
-    plot_alcr(save_data)
-    if show_plt:
-        plt.show()
-    if save_plt:
-        plt.savefig(f'results/plots/{compress_alg}.png', format='pdf')
+    if show_plt or save_plt:
+        plot_alcr(save_data)
+        if show_plt:
+            plt.show()
+        if save_plt:
+            plt.savefig(f'results/plots/{compress_alg}.png', format='pdf')
 
 if __name__ == '__main__':
 
@@ -117,25 +126,15 @@ if __name__ == '__main__':
     parser.add_argument('-sv', '--save', action='store_true', help='saves the output plot')
     parser.add_argument('-cfs', '--config_save', type=argparse.FileType('w'), help='dumps current config in given file and ends')
     parser.add_argument('-cfl', '--config_load', type=argparse.FileType('r'), help='loads config from given `.yaml` file')
-    parser.add_argument('-nt', '--net', type='str', default='mobilenet_v2', help='model selected for compression from pytorch model zoo')
     args = parser.parse_args()
-
-    net_name = parser.net
 
     # save config
     if args.config_save is not None:
         cfg = dump_comp_config()
         cfg['ga'] = dump_ga_config()
-        cfg['net'] = {
-            'name': net_name,
-            'type': None,
-        }
-        cfg['compress space'] = {
-            'up': args.upper_range,
-            'down': args.lower_range,
-            'optimized': RANGE_OPTIMIZATION,
-            'opt tresh': RANGE_OPTIMIZATION_TRESHOLD,
-        }
+            
+        cfg['compress space']['up'] = args.upper_range
+        cfg['compress space']['down'] = args.lower_range
         yaml.dump(cfg, args.config_save)
         sys.exit(0)
 
@@ -144,8 +143,5 @@ if __name__ == '__main__':
         cfg = yaml.safe_load(args.config_load)
         load_comp_config(cfg)
         load_ga_config(cfg['ga'])
-        net_name = cfg['net']['name']
-        RANGE_OPTIMIZATION = cfg['compress space']['optimized']
-        RANGE_OPTIMIZATION_TRESHOLD = cfg['compress space']['opt tresh']
 
-    compress_net(net_name, args.compressor, (args.lower_range, args.upper_range), args.num_iterations, args.num_population, args.hide, args.save)
+    compress_net(args.compressor, (args.lower_range, args.upper_range), args.num_iterations, args.num_population, args.hide, args.save)

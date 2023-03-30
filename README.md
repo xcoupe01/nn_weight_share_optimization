@@ -16,6 +16,6 @@ Implemented:
 - model-wise compression
 
 Nets tried:
-- LeNet-5
-- Mobilenet_v2
-- ResNet-18
+- LeNet-5       - MNIST dataset
+- Mobilenet_v2  - Lenette dataset
+- ResNet-18     - Lenette dataset

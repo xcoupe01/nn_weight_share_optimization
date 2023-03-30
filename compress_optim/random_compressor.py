@@ -5,12 +5,12 @@ from utils.weight_sharing import *
 from utils.fitness_controller import FitnessController
 from .compressor_config import CompressConfig
 
-def logger_fc(rnd_controler:RandomController, before_loss:float, save_data:pd.DataFrame=None) -> pd.DataFrame:
+def logger_fc(rnd_controler:RandomController, before_acc:float, save_data:pd.DataFrame=None) -> pd.DataFrame:
     """Logger function for PSO search
 
     Args:
         rnd_controller (RandomController): Is the Random Search controller which data are goind to be logged.
-        before_loss (float): Before loss of the net to compute acculacy loss.
+        before_acc (float): Before accuracy of the net to compute accuracy loss.
         save_data (pd.DataFrame, optional): Is the dataframe where the data is going to be saved. Defaults to None.
 
     Returns:
@@ -26,7 +26,7 @@ def logger_fc(rnd_controler:RandomController, before_loss:float, save_data:pd.Da
     indiv = rnd_controler.current_indiv
     new_data['representation'].append(indiv.representation)
     new_data['accuracy'].append(indiv.data['accuracy'])
-    new_data['accuracy_loss'].append(before_loss - indiv.data['accuracy'])
+    new_data['accuracy_loss'].append(before_acc - indiv.data['accuracy'])
     new_data['compression'].append(indiv.data['compression'])
     new_data['share_t'].append(indiv.data['times']['share'])
     new_data['train_t'].append(indiv.data['times']['train'])

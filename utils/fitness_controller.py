@@ -3,7 +3,7 @@ import pandas as pd
 
 class FitnessController:
     def __init__(self, base_targs:list[float], get_fit_vals, fit_from_vals, fitness_targ_update_fc = None, 
-        target_max_offset:list[float] = None, target_limit:list[float] = None ,lock:bool = False):
+        target_update_offset:list[float] = None, target_limit:list[float] = None ,lock:bool = False):
         """Inits the fitness controller.
 
         The fitness controler is desined to work with unreachable best possible target in some spectrum.
@@ -25,7 +25,7 @@ class FitnessController:
             get_fit_vals (function): Function, that takes the representation and gets the needed values to compute fitness.
             fit_from_vals (function): Function, that takes the values from previous function and computes the fitness.
             fitness_targ_update_fc (function, optional): Function that is triggered, when the target changes. Defaults to None.
-            target_max_offset (float, optional): New target offset. Defaults to None (all offsets are zero).
+            target_update_offset (float, optional): New target offset. Defaults to None (all offsets are zero).
             target_limit (list[floar], optional): Defines the lower bound in each dimenstion for point
                 to be considered as possible target (ie.: when you have possible target that have 0 acc and 32 compression
                 and you dont want it to be proceeded and taken as target for the compression, u set the acc limit to be 0.95
@@ -33,14 +33,14 @@ class FitnessController:
             lock (bool, optional): If true, the target does not move. Defaults to False.
         """
 
-        if target_max_offset is None:
-            target_max_offset = [0 for _ in base_targs]
+        if target_update_offset is None:
+            target_update_offset = [0 for _ in base_targs]
 
         self.targ = np.array(base_targs)
         self.get_fit_vals = get_fit_vals
         self.fit_from_vals = fit_from_vals
         self.fitness_targ_update_fc = fitness_targ_update_fc
-        self.target_offset = target_max_offset
+        self.target_offset = target_update_offset
         self.lock = lock
         self.target_limit = target_limit
 
@@ -61,10 +61,16 @@ class FitnessController:
 
         change = False
 
+        if np.array(potential_targs).ndim == 1:
+            potential_targs = [potential_targs]
+
         # limiting points
         if self.target_limit is not None:
             for i, limit in enumerate(self.target_limit):
                 potential_targs = [x for x in potential_targs if x[i] > limit]
+        
+        if len(potential_targs) == 0:
+            return False
 
         potential_targs = np.array(potential_targs).max(axis=0)
 

@@ -177,7 +177,7 @@ class GeneticController:
         self.generation = df['generation'].max()
         self.jump_start = True
 
-        self.fitness_cont.update_targs([df['accuracy'].max(), df['compression'].max()], verbose)
+        self.fitness_cont.fit_from_df(df, verbose)
 
         df = df[df['generation'] == self.generation].reset_index()
 

@@ -6,7 +6,17 @@ import torch.nn.functional as F
 
 class LeNet5(nn.Module):
 
-    def __init__(self, n_classes, type='tanh'):
+    def __init__(self, n_classes:int, type:str='tanh'):
+        """Inits the Le-Net5 model.
+
+        Args:
+            n_classes (int): Number of output neurons.
+            type (str, optional): Net type - tanh or relu. Defaults to 'tanh'.
+
+        Raises:
+            Exception: if unknoun net type specified.
+        """
+
         if type not in ['relu', 'tanh']:
             raise Exception('Unknown net type')
         

@@ -4,7 +4,17 @@ import sys
 
 CHUNK_SIZE = 8192
 
-def nice_file_size(size:int):
+def nice_file_size(size:int) -> str:
+    """Returns nice string representation of the file size.
+
+    Args:
+        size (int): is the size wanted to be converted into the nice size.
+        Asumed that number of bytes is given and converted to B, MB ect sizes.
+
+    Returns:
+        str: the converted file size.
+    """
+
     file_size_types = ['B', 'KB', 'MB', 'GB', 'TB']
     type_i = 0
     while size > 1000 and type_i < (len(file_size_types) - 1):
@@ -16,6 +26,15 @@ def nice_file_size(size:int):
 
 # source: https://stackoverflow.com/questions/15644964/python-progress-bar-and-downloads
 def download_file(url:str, filepath:str=None) -> str:
+    """Downloads large file from the internet.
+
+    Args:
+        url (str): Is the url of the file wanted to be downloaded.
+        filepath (str, optional): Is the folder path for the file to be downloaded to. Defaults to None.
+
+    Returns:
+        str: The filepath of the downloaded file.
+    """
     
     filename = os.path.join(filepath if filepath is not None else '', url.split('/')[-1])
 
