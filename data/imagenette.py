@@ -8,6 +8,7 @@ from PIL import Image
 import tarfile
 import json
 import os
+import argparse
 
 from data.utils.download import *
 
@@ -53,6 +54,7 @@ class ImagenetteDataset:
     def __init__(self, batch_size:int, dataset_path:str, val_split:float=0.5, dataset_type:str = 'imagenette2'):
         
         self.batch_size = batch_size
+        self.dataset_type = dataset_type
 
         # image transformation
         self.transforms = transforms.Compose([
@@ -121,3 +123,17 @@ class ImagenetteDataset:
             batch_size=self.batch_size,
             shuffle=True
         )
+
+    def __str__(self):
+        return f'{self.dataset_type}  dataset with: \n {len(self.train_dataset)} train datapoints, \n {len(self.valid_dataset)} valid datapoints \n {len(self.test_dataset)} test datapoints'
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(prog='imagenette.py', description='Imagenette and imagenet dataloader for WS-project. Dowloads the dataset')
+    parser.add_argument('-p', '--path', help='Path where the dataset will be stored.')
+    parser.add_argument('-t', '--type', choices=list(DOWNLOAD_URLS_DATASET.keys()), default=list(DOWNLOAD_URLS_DATASET.keys())[0], 
+        help='The Imagenette dataset type')
+
+    args = parser.parse_args()
+
+    print(ImagenetteDataset(32, args.path, dataset_type=args.type))

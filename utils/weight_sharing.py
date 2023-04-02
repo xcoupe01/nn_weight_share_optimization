@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import pandas as pd
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, MiniBatchKMeans
 from typing import Callable
 import math
 import time
@@ -110,7 +110,7 @@ class Layer:
             self.name)
 
     def share_weight(self, n_weights:int, plot:bool = False, assign:bool = False, unlock:bool = True, prec_rtype:str = None, 
-        mod_focus:float = None, mod_spread:float = None, n_clust_jobs:int=KMEANS_N_JOBS_TREAD) -> None:
+        mod_focus:float = None, mod_spread:float = None, n_clust_jobs:int = KMEANS_N_JOBS_TREAD, minibatch_kmeans:bool = False) -> None:
         """Runs clustering algorithm to determine the centroinds of given number of clustert, then
         computes the correct weight tensor for the network.
 
@@ -128,6 +128,7 @@ class Layer:
                 the more is the the modification spreaded (most spread is around the focus point). Defaults to None (== 0.0).
             n_clust_jobs (int, optional): Specifies the multiprocessing of clustering. Děfaults to KMEANS_N_JOBS_THREAD specified
                 in the source code.
+            TODO: minibatch_kmeans
 
             The k-means `y` space modification is calculated by following expression:
 
@@ -164,7 +165,10 @@ class Layer:
 
         # clustering
         with parallel_backend('threading', n_jobs=n_clust_jobs):
-            kmeans = KMeans(n_clusters=n_weights, random_state=42).fit(numpy_weights_2D)
+            if minibatch_kmeans:
+                kmeans = MiniBatchKMeans(n_clusters=n_weights, random_state=42).fit(numpy_weights_2D)
+            else:
+                kmeans = KMeans(n_clusters=n_weights, random_state=42).fit(numpy_weights_2D)
 
         self.clust_inertia = kmeans.inertia_
 
@@ -334,7 +338,7 @@ class WeightShare:
         return sum(layer_cr) / len(layer_cr)
 
     def share(self, layer_clusters:list, layer_order:list = None, retrain_amount:list = None, prec_reduct:list = None, mods_focus:list = None, 
-        mods_spread:list = None, verbose:bool = False, n_clust_jobs:int = KMEANS_N_JOBS_TREAD) -> dict:
+        mods_spread:list = None, verbose:bool = False, n_clust_jobs:int = KMEANS_N_JOBS_TREAD, minibatch_kmeans:bool = False) -> dict:
         """Shares the entire model in a given orger to a given number of weight clusters for each layer
         and retrains the model by a given amount.
 
@@ -355,6 +359,7 @@ class WeightShare:
             verbose (bool, optional): To print information about the sharing during the execution. Defaults to False.
             n_clust_jobs (int, optional): Specifies the multiprocessing of clustering. Děfaults to KMEANS_N_JOBS_THREAD specified
                 in the source code.
+            TODO: minibatch_kmeans
 
         Raises:
             Exception: if the input parameters are bad (lists do not correspond).
@@ -426,7 +431,7 @@ class WeightShare:
             # layer share phase
             start_share = time.time()
             self.model_layers[layer].share_weight(layer_clusters[layer], assign=True, unlock=False, prec_rtype=prec_reduct[layer], 
-                mod_focus=mods_focus[layer], mod_spread=mods_spread[layer], n_clust_jobs=n_clust_jobs)
+                mod_focus=mods_focus[layer], mod_spread=mods_spread[layer], n_clust_jobs=n_clust_jobs, minibatch_kmeans=minibatch_kmeans)
             total_share += time.time() - start_share
 
             # retrain phase
@@ -468,7 +473,7 @@ class WeightShare:
         }
 
     def share_total(self, model_clusters:int, mod_focus:int = 0, mod_spread:int = 0, prec_rtype:str = None, assign:bool = True, 
-        plot:bool = False, unlock:bool = False, n_clust_jobs:int = KMEANS_N_JOBS_TREAD) -> dict:
+        plot:bool = False, unlock:bool = False, n_clust_jobs:int = KMEANS_N_JOBS_TREAD, minibatch_kmeans:bool = False) -> dict:
         """Shares the model not by layers but as a whole - takes all the weights in the model, clusters them and 
         the result is only one key-value table for the whole model.
 
@@ -482,6 +487,7 @@ class WeightShare:
             unlock (bool, optional): If True, the model will be trainable after share. Defaults to False.
             n_clust_jobs (int, optional): Specifies the multiprocessing of clustering. Děfaults to KMEANS_N_JOBS_THREAD specified
                 in the source code.
+            TODO: minibatch_kmeans
 
         Raises:
             Exception: If the model was already shared and locked, it cannot be shared and an Exception is rised.
@@ -522,7 +528,10 @@ class WeightShare:
         # clustering
         numpy_weights_2D = np.swapaxes(numpy_weights_2D, 0, 1)
         with parallel_backend('threading', n_jobs=n_clust_jobs):
-            kmeans = KMeans(n_clusters=model_clusters, random_state=42).fit(numpy_weights_2D)
+            if minibatch_kmeans:
+                kmeans = MiniBatchKMeans(n_clusters=model_clusters, random_state=42).fit(numpy_weights_2D)
+            else:
+                kmeans = KMeans(n_clusters=model_clusters, random_state=42).fit(numpy_weights_2D)
 
         # reduction of additional dimension
         processed_cluster_centers = np.concatenate(kmeans.cluster_centers_[:, [0]])

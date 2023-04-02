@@ -48,7 +48,7 @@ def accuracy(output, target, topk=(1,)):
         for k in topk:
             #correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
             correct_k = correct[:k].sum(dim=(0,1)).float()
-            res.append(correct_k.mul_(100.0 / batch_size))
+            res.append(correct_k.mul_(1 / batch_size))
         return res
 
 def get_accuracy(model:torch.nn.Module, data_loader:DataLoader, device:str='cpu', topk:int=1) -> float:

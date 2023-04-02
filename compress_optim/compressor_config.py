@@ -13,6 +13,7 @@ class CompressConfig:
     CLUST_MOD_SPREAD = None #[0, 0, 0, 0, 0]
     TOP_K_ACC = 1
     DEVICE = 'cpu'
+    MINIBATCH_KMEANS = True
     # optim target
     OPTIM_TARGET = [0.1, 1.0]
     OPTIM_TARGET_LOW_LIMIT = [0.97, 1.0]
@@ -163,6 +164,7 @@ def dump_comp_config() -> object:
                 'focus': CompressConfig.CLUST_MOD_FOCUS,
                 'spread': CompressConfig.CLUST_MOD_SPREAD,
             },
+            'minibatch kmeans': CompressConfig.MINIBATCH_KMEANS,
         },
         'rnd': {},
         'ga': {},
@@ -208,6 +210,7 @@ def load_comp_config(json:object) -> None:
     CompressConfig.CLUST_MOD_FOCUS = json['ws settings']['modulation']['focus']
     CompressConfig.CLUST_MOD_SPREAD = json['ws settings']['modulation']['spread']
     CompressConfig.TOP_K_ACC = json['ws settings']['top k acc']
+    CompressConfig.MINIBATCH_KMEANS = json['ws settings']['minibatch kmeans']
     #rnd load
     #ga load
     #pso load
@@ -251,7 +254,7 @@ def fitness_vals_fc(individual, ws_controller:WeightShare):
     if individual.data is None:
         individual.data = ws_controller.share(repres, CompressConfig.SHARE_ORDER, CompressConfig.RETRAIN_AMOUNT, 
         prec_reduct=prec_reduct_list, mods_focus=CompressConfig.CLUST_MOD_FOCUS, 
-        mods_spread=CompressConfig.CLUST_MOD_SPREAD, verbose=True)
+        mods_spread=CompressConfig.CLUST_MOD_SPREAD, verbose=True, minibatch_kmeans=CompressConfig.MINIBATCH_KMEANS)
     
     return [individual.data['accuracy'], individual.data['compression']]
 
