@@ -5,12 +5,12 @@ RUN_CELLING = 1000 # restricts while True runs
 class EvolConfig:
 
     PAIRING_ALGORITHM = lambda list_indivs, num_pairs : pair_rulette(list_indivs, num_pairs)    # Set pairing algorithm
-    CROSSOVER_ALGORITHM = lambda pair : breed_single_point_crossover(pair)                      # Set crossover algorithm
+    CROSSOVER_ALGORITHM = lambda pair : breed_uniform(pair)                                     # Set crossover algorithm
     MUTATION_ALGORITHM = lambda indiv, p : mutation_prob_for_each(indiv, p)                     # Set mutation algorithm
-    MUTATION_PROBABILITY = 0.2                                                                  # Set mutation probability (depends also on used alg)
+    MUTATION_PROBABILITY = 0.01                                                                 # Set mutation probability (depends also on used alg)
     NUM_ELITISTS = 1                                                                            # Set the number of elitist chromosomes
     PAIRING_ALGORITHM_STR = 'roulette'                                                          # pairing algorithm text indication for experiment settings dump
-    CROSSOVER_ALGORITHM_STR = 'single point'                                                    # crossover algorithm text indication for experiment settings dump
+    CROSSOVER_ALGORITHM_STR = 'breed uniform'                                                   # crossover algorithm text indication for experiment settings dump
     MUTATION_ALGORITHM_STR = 'prob for each'                                                    # mutation algorithm text indication for experiment settings dump
 
 # -------------- breeding functions --------------

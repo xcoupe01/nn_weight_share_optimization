@@ -1,16 +1,13 @@
 #!/bin/bash
 
-readonly NUM_RUNS=13
+readonly NUM_RUNS=11
 readonly TARGET_FOLDERS=(
-    "./results/lenet_relu_compress_50_dynamic/"
-    "./results/lenet_relu_compress_50_dynamic_f1/" 
-    "./results/lenet_relu_compress_50_dynamic_f2/"
-    "./results/lenet_relu_compress_50_extrem_dynamic/"
-    "./results/lenet_tanh_compress_50_dynamic/"
-    "./results/lenet_tanh_compress_50_dynamic_f2/" 
-    "./results/lenet_tanh_compress_50_dynamic_f1/" 
-    "./results/lenet_tanh_compress_50_extrem_dynamic/"
+    "./results/mobnet_compress_2N_120_dynamic_mbk/"
     )
+
+readonly ALGORITHMS=(
+    "GA"
+)
 
 LOAD_COMMAND=""
 
@@ -26,14 +23,14 @@ do
         LOAD_COMMAND=" -cfl ${folder}experiment_setting.yaml"
         echo 'experiments settings file found and loaded'
     else  
-        python3.10 lenet_compression.py -cfs "${folder}experiment_setting.yaml"
+        python3.10 net_compression.py -cfs "${folder}experiment_setting.yaml"
         echo 'experiments settings file created'
     fi
 
     # do all algorithms
-    for algorithm in "$@"
+    for algorithm in ${ALGORITHMS}
     do
-        TARGET_FILE="lenet_${algorithm}_save.csv"
+        TARGET_FILE="${algorithm}_save.csv"
         
         # do all runs
         for i in $(seq 1 $NUM_RUNS)
@@ -47,16 +44,16 @@ do
             else
                 case $algorithm in
                     "RND")
-                    python3.10 lenet_compression.py -comp random -pop 20 -its 20 -up 51 -lo 1 -hp $LOAD_COMMAND
+                    python3.10 net_compression.py -comp random -pop 20 -its 20 -up 51 -lo 1 -hp $LOAD_COMMAND
                     ;;
                     "PSO")
-                    python3.10 lenet_compression.py -comp pso -pop 20 -its 20 -up 51 -lo 1 -hp $LOAD_COMMAND
+                    python3.10 net_compression.py -comp pso -pop 20 -its 20 -up 51 -lo 1 -hp $LOAD_COMMAND
                     ;;
                     "GA")
-                    python3.10 lenet_compression.py -comp genetic -pop 12 -its 36 -up 51 -lo 1 -hp $LOAD_COMMAND
+                    python3.10 net_compression.py -comp genetic -pop 12 -its 36 -up 51 -lo 1 -hp $LOAD_COMMAND
                     ;;
                     "BH")
-                    python3.10 lenet_compression.py -comp blackhole -pop 20 -its 20 -up 51 -lo 1 -hp $LOAD_COMMAND
+                    python3.10 net_compression.py -comp blackhole -pop 20 -its 20 -up 51 -lo 1 -hp $LOAD_COMMAND
                     ;;
                     *)
                     echo -n "unknown algorithm ${algorithm}"

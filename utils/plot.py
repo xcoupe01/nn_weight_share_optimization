@@ -104,6 +104,8 @@ def plot_optimalization_progress(files:dict, fit_cont:FitnessController):
         plt.title(key)
         plt.xlabel('iterace')
         plt.ylabel('fitness')
+    
+    plt.tight_layout()
 
 def pareto_from_df(df:pd.DataFrame) -> pd.DataFrame:
     """Generates pareto front from a given dataframe.

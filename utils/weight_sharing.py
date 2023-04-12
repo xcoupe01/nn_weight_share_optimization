@@ -128,7 +128,8 @@ class Layer:
                 the more is the the modification spreaded (most spread is around the focus point). Defaults to None (== 0.0).
             n_clust_jobs (int, optional): Specifies the multiprocessing of clustering. Děfaults to KMEANS_N_JOBS_THREAD specified
                 in the source code.
-            TODO: minibatch_kmeans
+            minibatch_kmeans (bool, optional): Specifies if classical Kmeans or MiniBatch Kmeans is used. If true, MiniBatch kmeans is used.
+                Defaults to False.
 
             The k-means `y` space modification is calculated by following expression:
 
@@ -359,7 +360,8 @@ class WeightShare:
             verbose (bool, optional): To print information about the sharing during the execution. Defaults to False.
             n_clust_jobs (int, optional): Specifies the multiprocessing of clustering. Děfaults to KMEANS_N_JOBS_THREAD specified
                 in the source code.
-            TODO: minibatch_kmeans
+            minibatch_kmeans (bool, optional): Specifies if classical Kmeans or MiniBatch Kmeans is used. If true, MiniBatch kmeans is used.
+                Defaults to False.
 
         Raises:
             Exception: if the input parameters are bad (lists do not correspond).
@@ -487,7 +489,8 @@ class WeightShare:
             unlock (bool, optional): If True, the model will be trainable after share. Defaults to False.
             n_clust_jobs (int, optional): Specifies the multiprocessing of clustering. Děfaults to KMEANS_N_JOBS_THREAD specified
                 in the source code.
-            TODO: minibatch_kmeans
+            minibatch_kmeans (bool, optional): Specifies if classical Kmeans or MiniBatch Kmeans is used. If true, MiniBatch kmeans is used.
+                Defaults to False.
 
         Raises:
             Exception: If the model was already shared and locked, it cannot be shared and an Exception is rised.
@@ -703,7 +706,7 @@ class WeightShare:
         for layer in self.model_layers:
             layer.reset_weight()
 
-    def get_layer_cluster_nums_perf(self, layer_i:int, layer_range:list, perf_fcs:list, pre_perf_fc=None, prec_rtype:str=None) -> list:
+    def get_layer_cluster_nums_perf(self, layer_i:int, layer_range:list, perf_fcs:list, pre_perf_fc=None, prec_rtype:str=None, minibatch_kmeans:bool = False) -> list:
         """Gets layer cluster performace for a given set of cluster numbers. After executing
         the model is returned to original state.
 
@@ -715,6 +718,8 @@ class WeightShare:
                 It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
                 (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
+            minibatch_kmeans (bool, optional): Specifies if classical Kmeans or MiniBatch Kmeans is used. If true, MiniBatch kmeans is used.
+                Defaults to False.
 
         Raises:
             Exception: if the layer is already locked, error is raised.
@@ -734,7 +739,7 @@ class WeightShare:
         for k in layer_range:
             
             # clustering and scoring the solution
-            self.model_layers[layer_i].share_weight(k, assign=True, unlock=False, prec_rtype=prec_rtype)
+            self.model_layers[layer_i].share_weight(k, assign=True, unlock=False, prec_rtype=prec_rtype, minibatch_kmeans=minibatch_kmeans)
             if pre_perf_fc is not None:
                 pre_perf_fc(self.model_layers[layer_i])
             k_score = [x(self.model_layers[layer_i]) for x in perf_fcs]
@@ -743,11 +748,17 @@ class WeightShare:
             # returning original data
             self.reset()
 
+        print(f'layer {layer_i} done - {output}')
+
         return output
 
-    def get_layers_cluster_nums_perfs(self, layer_ranges:list, perf_fcs, pre_perf_fc=None, prec_rtype:str=None) -> list:
+    def get_layers_cluster_nums_perfs(self, layer_ranges:list, perf_fcs, pre_perf_fc=None, prec_rtype:str=None, 
+            minibatch_kmeans:bool = False, savefile:str = None) -> list:
         """Gets all the layers cluster performace for a given set of cluster numbers. After executing
         the model is returned to original state.
+
+        If savefile is given, first it looks in the savefile and loads the prefs from it. Then it chooses the 
+        ones that are in the wanted layer ranges. If any perfs are missing, they are computed and added to the file.
 
         Args:
             layer_ranges (list): is the list of lists of the number of clusters wanted to be tested. 
@@ -757,6 +768,9 @@ class WeightShare:
                 It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
                 (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
+            minibatch_kmeans (bool, optional): Specifies if classical Kmeans or MiniBatch Kmeans is used. If true, MiniBatch kmeans is used.
+                Defaults to False.
+            savefile (str, optional): is a savefile to be loaded from or saved to. Defaults to None.
 
         Raises:
             Exception: When the layer_ranges do not correspond to the model layers as described an exception is raised.
@@ -768,15 +782,69 @@ class WeightShare:
         if len(self.model_layers) != len(layer_ranges):
             raise Exception('WeightShare get_layers_cluster_nums_perfs error - given ranges do not correspond to model layers')
 
-        layer_perfs = []
+        layer_perfs:list[list] = []
+        file_content:list[list] = []
+
+        # load file contents
+        if os.path.isfile(savefile):
+            with open(savefile) as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    layer_perfs.append([])
+                    file_content.append([])
+                    for item in row:
+                        perf = eval(item)
+                        # save file content to edit the file
+                        file_content[-1].append(perf)
+                        # get only the perfs in rages
+                        if perf[0] in layer_ranges[len(layer_perfs) - 1]:
+                            layer_perfs[-1].append(perf)
+
+        # save performaces if necessary
+        if savefile is not None and not os.path.isfile(savefile):
+            os.makedirs(os.path.dirname(savefile), exist_ok=True)
 
         for i, layer_range in enumerate(layer_ranges):
-            layer_perfs.append(self.get_layer_cluster_nums_perf(i, layer_range, perf_fcs, pre_perf_fc, prec_rtype=prec_rtype))
+            if i < len(layer_perfs):
+                # trim the computation range by the already computed perfs
+                clust_nums = set([x[0] for x in layer_perfs[i]])
+                layer_range = [x for x in list(layer_range) if x not in clust_nums]
+                
+            if len(layer_range) < 1:
+                # if nothing to compute skip
+                continue
+            
+            print(layer_range, i)
+
+            perf = self.get_layer_cluster_nums_perf(i, layer_range, perf_fcs, pre_perf_fc, prec_rtype=prec_rtype, minibatch_kmeans=minibatch_kmeans)
+            perf = [[x[0], x[1][0]] for x in perf]
+
+            # update the file  
+            if i < len(file_content):
+                # if added to loaded
+                file_content[i] += perf
+                file_content[i].sort(key = lambda x: x[0])
+            else:
+                file_content.append(perf)
+
+            # save the udated file
+            with open(savefile, 'w') as f:
+                for row in file_content:
+                    write = csv.writer(f)
+                    write.writerow(row)
+
+            # update the result perfs
+            if i < len(layer_perfs):
+                # if added to loaded
+                layer_perfs[i] += perf
+                layer_perfs[i].sort(key = lambda x: x[0])
+            else:
+                layer_perfs.append(perf)
 
         return layer_perfs
 
     def get_optimized_layer_ranges(self, layer_ranges:list, perf_fc, perf_lim:float=None, 
-    max_num_range:int=None, savefile:str=None, pre_perf_fc=None, prec_rtype:str=None) -> list:
+    max_num_range:int=None, savefile:str=None, pre_perf_fc=None, prec_rtype:str=None, minibatch_kmeans:bool=False) -> list:
         """Gets the oprimized clusters nubers for every layer of the model by given metrics.
         The metrics can be that the model with applied clusters number accuracy cant
         get below certain number and/or the number of clusters number can be limited
@@ -793,6 +861,8 @@ class WeightShare:
                 It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
                 (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
+            minibatch_kmeans (bool, optional): Specifies if classical Kmeans or MiniBatch Kmeans is used. If true, MiniBatch kmeans is used.
+                Defaults to False.
 
         Returns:
             list: a list where an index corresponds to a given layer. Each index contains a list of optimized
@@ -800,27 +870,11 @@ class WeightShare:
         """
         
         perfs = []
-
-        # load performances from file
-        if savefile is not None and os.path.isfile(savefile):
-            with open(savefile, 'r') as f:
-                reader = csv.reader(f)
-                for row in reader:
-                    perfs.append([])
-                    for item in row:
-                        perfs[-1].append(eval(item))
         
         # compute performances if file not avalible
-        else:
-            perfs = self.get_layers_cluster_nums_perfs(layer_ranges, [perf_fc], pre_perf_fc, prec_rtype=prec_rtype)
-            perfs = [[[y[0], y[1][0]] for y in x] for x in perfs]
-
-        # save performaces if necessary
-        os.makedirs(os.path.dirname(savefile), exist_ok=True)
-        if savefile is not None and not os.path.isfile(savefile):
-            with open(savefile, 'w') as f:
-                write = csv.writer(f)
-                write.writerows(perfs)
+        
+        perfs = self.get_layers_cluster_nums_perfs(layer_ranges, [perf_fc], pre_perf_fc, 
+            prec_rtype=prec_rtype, minibatch_kmeans=minibatch_kmeans, savefile=savefile)
 
         # get only the ranges that match performace needs
         for i, perf in enumerate(perfs):

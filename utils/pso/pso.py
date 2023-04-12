@@ -88,6 +88,23 @@ class Particle :
             index_position = max(index_position, 0)
             self.representation.append(self.possible_values[i][index_position])
 
+    def set_pos(self, position:list) -> None:
+        """Sets the position of the particle and calculates its corresponding representation.
+
+        Args:
+            position (list): the particle position to be set.
+        """
+
+        # saving position
+        self.position = position
+
+        # setting curent representation
+        self.representation = []
+        for i in range(len(self.possible_values)):
+            index_position = min(int(self.position[i]), len(self.possible_values[i]) - 1)
+            index_position = max(index_position, 0)
+            self.representation.append(self.possible_values[i][index_position])
+
     def move(self, swarm_best_pos:list, limit_position:bool=True, limit_velocity:bool=True) -> None:
         """Moves the particle accordigly to the PSO algorithm by following expression:
         - first the new velocity is calculated as:

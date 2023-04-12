@@ -14,16 +14,17 @@ class CompressConfig:
     TOP_K_ACC = 1
     DEVICE = 'cpu'
     MINIBATCH_KMEANS = True
+    TOP_REPR_SET_INDIV = True
     # optim target
-    OPTIM_TARGET = [0.1, 1.0]
-    OPTIM_TARGET_LOW_LIMIT = [0.97, 1.0]
+    OPTIM_TARGET = [0.82, 4.0]
+    OPTIM_TARGET_LOW_LIMIT = [0.82, 1.0]
     OPTIM_TARGET_LOCK = False
     OPTIM_TARGET_UPDATE_OFFSET = [0.001, 0.1]
     # net settings
     NET_TYPE = 'mobilenet_v2'
     # range optim
     RANGE_OPTIMIZATION = True
-    RANGE_OPTIMIZATION_TRESHOLD = 0.01
+    RANGE_OPTIMIZATION_TRESHOLD = 0.825
 
     # genetic config
     EVOL_SAVE_FILE = './results/GA_save.csv'
@@ -48,7 +49,7 @@ class CompressConfig:
     }
 
     # pso config
-    PSO_PARTICLE_MAX_VELOCITY = [4 for _ in range(5)]
+    PSO_PARTICLE_MAX_VELOCITY = [4 for _ in range(53)]
     PSO_SAVE_FILE = './results/PSO_save.csv'
     PSO_LIMIT_VELOCITY = True
     PSO_LIMIT_POSITION = True
@@ -76,7 +77,7 @@ class CompressConfig:
     }
 
     # bh config
-    BH_PARTICLE_MAX_VELOCITY = [4 for _ in range(5)]
+    BH_PARTICLE_MAX_VELOCITY = [4 for _ in range(53)]
     BH_RADIUS = None
     BH_VEL_TRESH = 0.25
     BH_REPR_RAD = True
@@ -154,6 +155,7 @@ def dump_comp_config() -> object:
             'lock': CompressConfig.OPTIM_TARGET_LOCK,
             'update offset': CompressConfig.OPTIM_TARGET_UPDATE_OFFSET,
             'update limit': CompressConfig.OPTIM_TARGET_LOW_LIMIT,
+            'top indiv': CompressConfig.TOP_REPR_SET_INDIV,
         },
         'ws settings': {
             'share order': CompressConfig.SHARE_ORDER,
@@ -203,6 +205,7 @@ def load_comp_config(json:object) -> None:
     CompressConfig.OPTIM_TARGET_LOCK = json['target']['lock']
     CompressConfig.OPTIM_TARGET_UPDATE_OFFSET = json['target']['update offset']
     CompressConfig.OPTIM_TARGET_LOW_LIMIT = json['target']['update limit']
+    CompressConfig.TOP_REPR_SET_INDIV = json['target']['top indiv']
     #ws load
     CompressConfig.SHARE_ORDER = json['ws settings']['share order']
     CompressConfig.RETRAIN_AMOUNT = json['ws settings']['retrain']
@@ -254,7 +257,7 @@ def fitness_vals_fc(individual, ws_controller:WeightShare):
     if individual.data is None:
         individual.data = ws_controller.share(repres, CompressConfig.SHARE_ORDER, CompressConfig.RETRAIN_AMOUNT, 
         prec_reduct=prec_reduct_list, mods_focus=CompressConfig.CLUST_MOD_FOCUS, 
-        mods_spread=CompressConfig.CLUST_MOD_SPREAD, verbose=True, minibatch_kmeans=CompressConfig.MINIBATCH_KMEANS)
+        mods_spread=CompressConfig.CLUST_MOD_SPREAD, minibatch_kmeans=CompressConfig.MINIBATCH_KMEANS)
     
     return [individual.data['accuracy'], individual.data['compression']]
 

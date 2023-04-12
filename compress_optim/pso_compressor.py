@@ -68,6 +68,9 @@ def compression_pso_optim(num_iterations:int, num_particles:int, ranges:list, be
     # loading if possible
     if save_data is not None and save_data.size != 0:
         pso.load_from_pd(save_data)
+    elif CompressConfig.TOP_REPR_SET_INDIV:
+        # setting top repr indiv if needed
+        pso.swarm[0].set_pos([float(len(rng)) for rng in ranges])
 
     # compression
     return pso.run(num_iterations, lam_log, save_data, CompressConfig.PSO_LIMIT_POSITION, CompressConfig.PSO_LIMIT_VELOCITY ,verbose=CompressConfig.VERBOSE)

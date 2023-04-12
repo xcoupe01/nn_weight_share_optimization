@@ -78,6 +78,9 @@ def compression_genetic_optim(num_generation:int, num_population:int, ranges:lis
     # load if possible
     if save_data is not None and save_data.size != 0:
         genetic.load_from_pd(save_data)
+    elif CompressConfig.TOP_REPR_SET_INDIV:
+        # setting top repr indiv if needed
+        genetic.population[0].chromosome = [rng[-1] for rng in ranges]
 
     # compression
     return genetic.run(num_generation, lam_log, save_data, deal_elit, CompressConfig.VERBOSE)

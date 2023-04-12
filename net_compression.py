@@ -3,6 +3,7 @@ import torch.nn as nn
 import argparse
 import yaml
 import sys
+import numpy as np
 
 from data.imagenette import ImagenetteDataset
 from data.utils.imagenet_utils import *
@@ -10,6 +11,7 @@ from utils.weight_sharing import *
 from utils.plot import *
 from utils.fitness_controller import FitnessController
 from utils.genetic import dump_ga_config, load_ga_config
+from utils.range_processor import process_range_2n
 
 from compress_optim import *
 
@@ -19,7 +21,9 @@ NET_REPO = 'pytorch/vision:v0.10.0'
 # dataset settings
 DATA_PATH = './data/imagenette'
 # optimization settings
-RANGE_OPTIMIZATION_FILE = lambda nn, prec: f'./models/{nn}/saves/{nn}_layer_perf_{prec}.csv'
+#RANGE_OPTIMIZATION_FILE = lambda nn, prec: f'./models/{nn}/saves/{nn}_layer_perf_{prec}.csv'
+RANGE_OPTIMIZATION_FILE = lambda nn, prec: f'./models/{nn}/saves/{nn}_layer_perf_{prec}_full.csv'
+N2_OPT = False
 
 def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
     """Lenet compression function.
@@ -41,7 +45,7 @@ def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:in
         print('initing model')
 
     # ----------------------------------
-    dataset = ImagenetteDataset(BATCH_SIZE, DATA_PATH, val_split=0.99)
+    dataset = ImagenetteDataset(BATCH_SIZE, DATA_PATH, val_split=0.3)
     model = torch.hub.load(NET_REPO, CompressConfig.NET_TYPE, pretrained=True)
     #criterion = nn.CrossEntropyLoss()
     #optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
@@ -53,7 +57,7 @@ def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:in
     # ----------------------------------
 
     # get before acc
-    before_acc = lam_test()
+    before_acc = 0 # lam_test()
     if CompressConfig.VERBOSE:
         print(f'before loss: {before_acc}')
 
@@ -72,16 +76,27 @@ def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:in
     # creating and optimizing search ranges
     low, up = search_ranges
     search_ranges = [range(low, up) for _ in ws_controller.model_layers]
+
+    # raw range optimization
+    if N2_OPT:
+        search_ranges = [process_range_2n(x, ensure=True) for x in search_ranges]
+
     lam_test_inp = lambda _ : lam_test()
     if CompressConfig.RANGE_OPTIMIZATION:
         if CompressConfig.VERBOSE:
             print('range optimization')
+            acc1 = np.prod([float(len(x)) for x in search_ranges])
         search_ranges = ws_controller.get_optimized_layer_ranges(
             search_ranges, 
             lam_test_inp, 
             CompressConfig.RANGE_OPTIMIZATION_TRESHOLD, 
             savefile=RANGE_OPTIMIZATION_FILE(CompressConfig.NET_TYPE, CompressConfig.PRECISION_REDUCTION),
-            prec_rtype=CompressConfig.PRECISION_REDUCTION)
+            prec_rtype=CompressConfig.PRECISION_REDUCTION,
+            minibatch_kmeans=CompressConfig.MINIBATCH_KMEANS)
+        if CompressConfig.VERBOSE:
+            print([len(x) for x in search_ranges])
+            acc2 = np.prod([float(len(x)) for x in search_ranges])
+            print(f'range optimization reduced space from {acc1} to {acc2}')
 
     # defining fitness controller
     fit_controll = FitnessController(CompressConfig.OPTIM_TARGET, lam_fitness_vals_fc, fit_from_vals, 
