@@ -57,7 +57,7 @@ def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:in
     # ----------------------------------
 
     # get before acc
-    before_acc = 0 # lam_test()
+    before_acc = 0 #lam_test()
     if CompressConfig.VERBOSE:
         print(f'before loss: {before_acc}')
 
@@ -92,7 +92,7 @@ def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:in
             CompressConfig.RANGE_OPTIMIZATION_TRESHOLD, 
             savefile=RANGE_OPTIMIZATION_FILE(CompressConfig.NET_TYPE, CompressConfig.PRECISION_REDUCTION),
             prec_rtype=CompressConfig.PRECISION_REDUCTION,
-            minibatch_kmeans=CompressConfig.MINIBATCH_KMEANS)
+            clust_alg=CompressConfig.CLUST_ALG)
         if CompressConfig.VERBOSE:
             print([len(x) for x in search_ranges])
             acc2 = np.prod([float(len(x)) for x in search_ranges])
@@ -134,13 +134,14 @@ if __name__ == '__main__':
         'by different algorithms. The outputs are stored in the results folder. See compatible networs here https://pytorch.org/vision/stable/models.html')
     parser.add_argument('-comp', '--compressor', choices=['random', 'pso', 'genetic', 'blackhole'], default='random', help='choose the compression algorithm')
     parser.add_argument('-pop', '--num_population', metavar='N', type=int, default=12, help='set the population count')
-    parser.add_argument('-its', '--num_iterations', metavar='N', type=int, default=30, help='set the iteration count')
-    parser.add_argument('-up', '--upper_range', metavar='N', type=int, default=51, help='sets the upper range for compression')
+    parser.add_argument('-its', '--num_iterations', metavar='N', type=int, default=36, help='set the iteration count')
+    parser.add_argument('-up', '--upper_range', metavar='N', type=int, default=121, help='sets the upper range for compression')
     parser.add_argument('-lo', '--lower_range', metavar='N', type=int, default=1, help='sets the lower range for compression')
     parser.add_argument('-hp', '--hide', action='store_false', help='does not show the output plot')
     parser.add_argument('-sv', '--save', action='store_true', help='saves the output plot')
     parser.add_argument('-cfs', '--config_save', type=argparse.FileType('w'), help='dumps current config in given file and ends')
     parser.add_argument('-cfl', '--config_load', type=argparse.FileType('r'), help='loads config from given `.yaml` file')
+    parser.add_argument('-sf', '--save_folder', type=str, help='Folder with the saves to be created, loaded, ect.')
     args = parser.parse_args()
 
     # save config
@@ -158,5 +159,12 @@ if __name__ == '__main__':
         cfg = yaml.safe_load(args.config_load)
         load_comp_config(cfg)
         load_ga_config(cfg['ga'])
+
+    # edit save file location
+    if args.save_folder is not None:
+        if os.path.isdir(args.save_folder):
+            set_save_files_path(args.save_folder)
+        else:
+            raise Exception(f'main err - {args.save_folder} is not a folder')
 
     compress_net(args.compressor, (args.lower_range, args.upper_range), args.num_iterations, args.num_population, args.hide, args.save)

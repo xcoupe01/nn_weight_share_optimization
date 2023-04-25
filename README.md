@@ -18,4 +18,3 @@ Implemented:
 Nets tried:
 - LeNet-5       - MNIST dataset
 - Mobilenet_v2  - Lenette dataset
-- ResNet-18     - Lenette dataset

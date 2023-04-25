@@ -18,8 +18,8 @@ DEVICE = 'cpu'
 NET_TYPE = 'mobilenet_v2'
 
 parser = argparse.ArgumentParser(prog='net_range_opt.py')
-parser.add_argument('-lo', '--low', type=int, default=10)
-parser.add_argument('-up', '--upper', type=int, default=1)
+parser.add_argument('-lo', '--low', type=int, default=1)
+parser.add_argument('-up', '--upper', type=int, default=10)
 parser.add_argument('-fn', '--filenumber', type=int, default=1)
 parser.add_argument('-pr', '--precision', type=str, default='f4')
 
@@ -43,14 +43,13 @@ ws_controller.set_reset()
 # creating and optimizing search ranges
 search_ranges = [range(args.low, args.upper) for _ in ws_controller.model_layers]
 
+# range optimization
 lam_test_inp = lambda _ : lam_test()
-
 print('range optimization')
-
 ws_controller.get_optimized_layer_ranges(
-search_ranges, 
-lam_test_inp, 
-0.1, 
-savefile=f'./models/mobilenet_v2/saves/mobilenet_v2_layer_perf_{args.precision}_full-{args.filenumber}.csv',
-prec_rtype=args.precision,
-minibatch_kmeans=True)
+    search_ranges, 
+    lam_test_inp, 
+    0.1, 
+    savefile=f'./models/mobilenet_v2/saves/mobilenet_v2_layer_perf_{args.precision}_full-{args.filenumber}.csv',
+    prec_rtype=args.precision,
+    minibatch_kmeans=True)

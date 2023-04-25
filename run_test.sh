@@ -1,13 +1,21 @@
 #!/bin/bash
 
+
+# settings
 readonly NUM_RUNS=11
 readonly TARGET_FOLDERS=(
-    "./results/mobnet_compress_2N_120_dynamic_mbk/"
+    "./results/lenet_tanh_compress_50_dynamic_gmm/"
+    "./results/lenet_relu_compress_50_dynamic_gmm/"
     )
 
 readonly ALGORITHMS=(
     "GA"
+    "PSO"
+    "BH"
 )
+readonly PROGRAM_FILE='lenet_compression.py'
+readonly UP_RANGE=51
+readonly LOW_RAGE=1
 
 LOAD_COMMAND=""
 
@@ -28,7 +36,7 @@ do
     fi
 
     # do all algorithms
-    for algorithm in ${ALGORITHMS}
+    for algorithm in ${ALGORITHMS[@]}
     do
         TARGET_FILE="${algorithm}_save.csv"
         
@@ -44,23 +52,23 @@ do
             else
                 case $algorithm in
                     "RND")
-                    python3.10 net_compression.py -comp random -pop 20 -its 20 -up 51 -lo 1 -hp $LOAD_COMMAND
+                    python3.10 $PROGRAM_FILE -comp random -pop 20 -its 20 -up $UP_RANGE -lo $LOW_RAGE -hp $LOAD_COMMAND -sf $run_folder
                     ;;
                     "PSO")
-                    python3.10 net_compression.py -comp pso -pop 20 -its 20 -up 51 -lo 1 -hp $LOAD_COMMAND
+                    echo $run_folder
+                    python3.10 $PROGRAM_FILE -comp pso -pop 20 -its 20 -up $UP_RANGE -lo $LOW_RAGE -hp $LOAD_COMMAND -sf $run_folder
                     ;;
                     "GA")
-                    python3.10 net_compression.py -comp genetic -pop 12 -its 36 -up 51 -lo 1 -hp $LOAD_COMMAND
+                    python3.10 $PROGRAM_FILE -comp genetic -pop 12 -its 36 -up $UP_RANGE -lo $LOW_RAGE -hp $LOAD_COMMAND -sf $run_folder
                     ;;
                     "BH")
-                    python3.10 net_compression.py -comp blackhole -pop 20 -its 20 -up 51 -lo 1 -hp $LOAD_COMMAND
+                    python3.10 $PROGRAM_FILE -comp blackhole -pop 20 -its 20 -up $UP_RANGE -lo $LOW_RAGE -hp $LOAD_COMMAND -sf $run_folder
                     ;;
                     *)
                     echo -n "unknown algorithm ${algorithm}"
                     exit
                     ;;
                 esac
-                mv "./results/$TARGET_FILE" "$run_folder/$TARGET_FILE"
                 echo "$run_folder completed"
             fi
         done

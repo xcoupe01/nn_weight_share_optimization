@@ -57,9 +57,9 @@ def compression_bh_optim(num_iterations:int, num_particles:int, ranges:list, bef
         list: The best found solution.
     """
 
-    save_data = pd.read_csv(CompressConfig.PSO_SAVE_FILE).astype(CompressConfig.PSO_DATA_TYPES) if \
-        os.path.exists(CompressConfig.PSO_SAVE_FILE) else \
-        pd.DataFrame(CompressConfig.PSO_DATA).astype(CompressConfig.PSO_DATA_TYPES)
+    save_data = pd.read_csv(CompressConfig.BH_SAVE_FILE).astype(CompressConfig.BH_DATA_TYPES) if \
+        os.path.exists(CompressConfig.BH_SAVE_FILE) else \
+        pd.DataFrame(CompressConfig.BH_DATA).astype(CompressConfig.BH_DATA_TYPES)
 
     # initing pso
     lam_log = lambda pso_cont, save_data : logger_fc(pso_cont, before_loss, save_data)

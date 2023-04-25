@@ -49,7 +49,7 @@ class Particle :
         if position is not None and velocity is not None:
             if len(position) != len(self.position_ranges) or len(velocity) != len(max_velocity):
                 raise Exception('Particle init error - loaded data do not match')
-            self.position = position
+            self.set_pos(position)
             self.velocity = velocity
             return
 

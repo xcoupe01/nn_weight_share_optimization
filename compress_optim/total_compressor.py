@@ -20,7 +20,8 @@ def compression_total(range:list, before_acc:float, ws_controller:WeightShare):
 
     # generating data
     for value in range:
-        perf = ws_controller.share_total(value, prec_rtype=CompressConfig.PRECISION_REDUCTION[0])
+        perf = ws_controller.share_total(value, prec_rtype=CompressConfig.PRECISION_REDUCTION[0],
+            clust_alg=CompressConfig.CLUST_ALG)
         ws_controller.reset()
         df['num_vals'].append(value)
         df['compression'].append(perf['compression'])

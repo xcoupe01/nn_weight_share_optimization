@@ -75,7 +75,8 @@ def compress_lenet(compress_alg:str, search_ranges:list, num_iter:int, num_pop:i
             lam_test_inp, 
             CompressConfig.RANGE_OPTIMIZATION_TRESHOLD, 
             savefile=RANGE_OPTIMIZATION_FILE(CompressConfig.NET_TYPE, CompressConfig.PRECISION_REDUCTION), 
-            prec_rtype=CompressConfig.PRECISION_REDUCTION)
+            prec_rtype=CompressConfig.PRECISION_REDUCTION,
+            clust_alg=CompressConfig.CLUST_ALG)
 
     # defining fitness controller
     fit_controll = FitnessController(CompressConfig.OPTIM_TARGET, lam_fitness_vals_fc, fit_from_vals, 
@@ -120,6 +121,7 @@ if __name__ == '__main__':
     parser.add_argument('-sv', '--save', action='store_true', help='saves the output plot')
     parser.add_argument('-cfs', '--config_save', type=argparse.FileType('w'), help='dumps current config in given file and ends')
     parser.add_argument('-cfl', '--config_load', type=argparse.FileType('r'), help='loads config from given `.yaml` file')
+    parser.add_argument('-sf', '--save_folder', type=str, help='Folder with the saves to be created, loaded, ect.')
     args = parser.parse_args()
 
     # save config
@@ -139,6 +141,13 @@ if __name__ == '__main__':
         load_comp_config(cfg)
         load_ga_config(cfg['ga'])
         print('Config loaded')
+
+    # edit save file location
+    if args.save_folder is not None:
+        if os.path.isdir(args.save_folder):
+            set_save_files_path(args.save_folder)
+        else:
+            raise Exception(f'main err - {args.save_folder} is not a folder')
 
     repr_range = [range(args.lower_range, args.upper_range) for _ in range(5)]
     compress_lenet(args.compressor, repr_range, args.num_iterations, args.num_population, args.hide, args.save)

@@ -13,7 +13,7 @@ class CompressConfig:
     CLUST_MOD_SPREAD = None #[0, 0, 0, 0, 0]
     TOP_K_ACC = 1
     DEVICE = 'cpu'
-    MINIBATCH_KMEANS = True
+    CLUST_ALG = 'minibatch-kmeans'
     TOP_REPR_SET_INDIV = True
     # optim target
     OPTIM_TARGET = [0.82, 4.0]
@@ -166,7 +166,7 @@ def dump_comp_config() -> object:
                 'focus': CompressConfig.CLUST_MOD_FOCUS,
                 'spread': CompressConfig.CLUST_MOD_SPREAD,
             },
-            'minibatch kmeans': CompressConfig.MINIBATCH_KMEANS,
+            'clust alg': CompressConfig.CLUST_ALG,
         },
         'rnd': {},
         'ga': {},
@@ -205,7 +205,7 @@ def load_comp_config(json:object) -> None:
     CompressConfig.OPTIM_TARGET_LOCK = json['target']['lock']
     CompressConfig.OPTIM_TARGET_UPDATE_OFFSET = json['target']['update offset']
     CompressConfig.OPTIM_TARGET_LOW_LIMIT = json['target']['update limit']
-    CompressConfig.TOP_REPR_SET_INDIV = json['target']['top indiv']
+    CompressConfig.TOP_REPR_SET_INDIV = json['target']['top indiv'] if 'top idniv' in json['target'].keys() else False
     #ws load
     CompressConfig.SHARE_ORDER = json['ws settings']['share order']
     CompressConfig.RETRAIN_AMOUNT = json['ws settings']['retrain']
@@ -213,7 +213,7 @@ def load_comp_config(json:object) -> None:
     CompressConfig.CLUST_MOD_FOCUS = json['ws settings']['modulation']['focus']
     CompressConfig.CLUST_MOD_SPREAD = json['ws settings']['modulation']['spread']
     CompressConfig.TOP_K_ACC = json['ws settings']['top k acc']
-    CompressConfig.MINIBATCH_KMEANS = json['ws settings']['minibatch kmeans']
+    CompressConfig.CLUST_ALG = json['ws settings']['clust alg']
     #rnd load
     #ga load
     #pso load
@@ -233,6 +233,18 @@ def load_comp_config(json:object) -> None:
     CompressConfig.NET_TYPE = json['net']['type']
     CompressConfig.RANGE_OPTIMIZATION = json['compress space']['optimized']
     CompressConfig.RANGE_OPTIMIZATION_TRESHOLD = json['compress space']['opt tresh']
+
+def set_save_files_path(folder:str):
+    """Sets the filepaths to given folder for all compressions.
+
+    Args:
+        folder (str): is the path to the folder where the savefiles will be saved.
+    """
+
+    CompressConfig.EVOL_SAVE_FILE = os.path.join(folder, 'GA_save.csv')
+    CompressConfig.PSO_SAVE_FILE = os.path.join(folder, 'PSO_save.csv')
+    CompressConfig.BH_SAVE_FILE = os.path.join(folder, 'BH_save.csv')
+    CompressConfig.RND_SAVE_FILE = os.path.join(folder, 'RND_save.csv')
 
 def fitness_vals_fc(individual, ws_controller:WeightShare):
     """Base values for computing fitness getter.
@@ -257,7 +269,7 @@ def fitness_vals_fc(individual, ws_controller:WeightShare):
     if individual.data is None:
         individual.data = ws_controller.share(repres, CompressConfig.SHARE_ORDER, CompressConfig.RETRAIN_AMOUNT, 
         prec_reduct=prec_reduct_list, mods_focus=CompressConfig.CLUST_MOD_FOCUS, 
-        mods_spread=CompressConfig.CLUST_MOD_SPREAD, minibatch_kmeans=CompressConfig.MINIBATCH_KMEANS)
+        mods_spread=CompressConfig.CLUST_MOD_SPREAD, clust_alg=CompressConfig.CLUST_ALG)
     
     return [individual.data['accuracy'], individual.data['compression']]
 

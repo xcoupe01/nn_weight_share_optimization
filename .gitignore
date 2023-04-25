@@ -6,6 +6,7 @@ data/MNIST
 data/oxford-iiit-pet
 data/imagenet
 data/imagenette
+data/imagewang
 quant_tests/*.data
 .vscode
 

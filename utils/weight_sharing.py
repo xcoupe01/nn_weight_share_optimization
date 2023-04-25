@@ -1,9 +1,17 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Implementation of Weight-Sharing techique for pytorch models
+"""
+
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import pandas as pd
 from sklearn.cluster import KMeans, MiniBatchKMeans
+from sklearn.mixture import GaussianMixture
 from typing import Callable
 import math
 import time
@@ -11,6 +19,7 @@ import copy
 import csv
 import os
 from joblib import parallel_backend
+from scipy.stats.stats import pearsonr
 
 from utils.float_prec_reducer import FloatPrecReducer
 
@@ -110,7 +119,7 @@ class Layer:
             self.name)
 
     def share_weight(self, n_weights:int, plot:bool = False, assign:bool = False, unlock:bool = True, prec_rtype:str = None, 
-        mod_focus:float = None, mod_spread:float = None, n_clust_jobs:int = KMEANS_N_JOBS_TREAD, minibatch_kmeans:bool = False) -> None:
+        mod_focus:float = None, mod_spread:float = None, n_clust_jobs:int = KMEANS_N_JOBS_TREAD, clust_alg:str = 'kmeans') -> None:
         """Runs clustering algorithm to determine the centroinds of given number of clustert, then
         computes the correct weight tensor for the network.
 
@@ -128,8 +137,8 @@ class Layer:
                 the more is the the modification spreaded (most spread is around the focus point). Defaults to None (== 0.0).
             n_clust_jobs (int, optional): Specifies the multiprocessing of clustering. Děfaults to KMEANS_N_JOBS_THREAD specified
                 in the source code.
-            minibatch_kmeans (bool, optional): Specifies if classical Kmeans or MiniBatch Kmeans is used. If true, MiniBatch kmeans is used.
-                Defaults to False.
+            clust_alg (str, optional): Specifies the clustering algorithm. 'kmeas' for classical K-means, 'minibatch-kmeas' for 
+                minibatch kmeans and 'gmm' for gaussian mixture model. Defaults to 'kmeans'.
 
             The k-means `y` space modification is calculated by following expression:
 
@@ -137,6 +146,7 @@ class Layer:
 
         Raises:
             Exception: If the shaing is runned after locking the last sharing, then an error is raised.
+            Exception: If non valid clust_alg parameter is passed
         """
 
         if not self.weight.requires_grad:
@@ -166,26 +176,37 @@ class Layer:
 
         # clustering
         with parallel_backend('threading', n_jobs=n_clust_jobs):
-            if minibatch_kmeans:
+            if clust_alg == 'kmeans':
                 kmeans = MiniBatchKMeans(n_clusters=n_weights, random_state=42).fit(numpy_weights_2D)
-            else:
+                labels = kmeans.labels_
+                cluster_centers = kmeans.cluster_centers_[:, [0]]
+                self.clust_inertia = kmeans.inertia_
+            elif clust_alg == 'minibatch-kmeans':
                 kmeans = KMeans(n_clusters=n_weights, random_state=42).fit(numpy_weights_2D)
-
-        self.clust_inertia = kmeans.inertia_
+                labels = kmeans.labels_
+                cluster_centers = kmeans.cluster_centers_[:, [0]]
+                self.clust_inertia = kmeans.inertia_
+            elif clust_alg == 'gmm':
+                GMM = GaussianMixture(n_components=n_weights, random_state=42).fit(numpy_weights_2D)
+                labels = GMM.predict(numpy_weights_2D)
+                cluster_centers = GMM.means_[:, [0]]
+                self.clust_inertia = 0
+            else:
+                raise Exception(f'Layer share_weight error - unknown clustering algorithm: {clust_alg}')
 
         # reduction of additional dimension
-        processed_cluster_centers = np.concatenate(kmeans.cluster_centers_[:, [0]])
+        processed_cluster_centers = np.concatenate(cluster_centers)
         
         # precision reduction if possible - reduce to the important dimesion
         if self.prec_reducer is not None and prec_rtype is not None:
             processed_cluster_centers = self.prec_reducer.reduce_list(processed_cluster_centers, prec_rtype)
         
         if plot:
-            self.plot_weight(processed_cluster_centers, kmeans.labels_)
+            self.plot_weight(processed_cluster_centers, labels)
 
         if assign:
             # assigning and locking the new shared tensor
-            new_tensor = [processed_cluster_centers[i] for i in kmeans.labels_]
+            new_tensor = [processed_cluster_centers[i] for i in labels]
             new_tensor = torch.tensor(new_tensor).to(device)
             new_tensor = new_tensor.reshape(original_shape)
 
@@ -339,7 +360,7 @@ class WeightShare:
         return sum(layer_cr) / len(layer_cr)
 
     def share(self, layer_clusters:list, layer_order:list = None, retrain_amount:list = None, prec_reduct:list = None, mods_focus:list = None, 
-        mods_spread:list = None, verbose:bool = False, n_clust_jobs:int = KMEANS_N_JOBS_TREAD, minibatch_kmeans:bool = False) -> dict:
+        mods_spread:list = None, verbose:bool = False, n_clust_jobs:int = KMEANS_N_JOBS_TREAD, clust_alg:str = 'kmeans') -> dict:
         """Shares the entire model in a given orger to a given number of weight clusters for each layer
         and retrains the model by a given amount.
 
@@ -360,8 +381,8 @@ class WeightShare:
             verbose (bool, optional): To print information about the sharing during the execution. Defaults to False.
             n_clust_jobs (int, optional): Specifies the multiprocessing of clustering. Děfaults to KMEANS_N_JOBS_THREAD specified
                 in the source code.
-            minibatch_kmeans (bool, optional): Specifies if classical Kmeans or MiniBatch Kmeans is used. If true, MiniBatch kmeans is used.
-                Defaults to False.
+            clust_alg (str, optional): Specifies the clustering algorithm. 'kmeas' for classical K-means, 'minibatch-kmeas' for 
+                minibatch kmeans and 'gmm' for gaussian mixture model. Defaults to 'kmeans'.
 
         Raises:
             Exception: if the input parameters are bad (lists do not correspond).
@@ -433,7 +454,7 @@ class WeightShare:
             # layer share phase
             start_share = time.time()
             self.model_layers[layer].share_weight(layer_clusters[layer], assign=True, unlock=False, prec_rtype=prec_reduct[layer], 
-                mod_focus=mods_focus[layer], mod_spread=mods_spread[layer], n_clust_jobs=n_clust_jobs, minibatch_kmeans=minibatch_kmeans)
+                mod_focus=mods_focus[layer], mod_spread=mods_spread[layer], n_clust_jobs=n_clust_jobs, clust_alg=clust_alg)
             total_share += time.time() - start_share
 
             # retrain phase
@@ -475,7 +496,7 @@ class WeightShare:
         }
 
     def share_total(self, model_clusters:int, mod_focus:int = 0, mod_spread:int = 0, prec_rtype:str = None, assign:bool = True, 
-        plot:bool = False, unlock:bool = False, n_clust_jobs:int = KMEANS_N_JOBS_TREAD, minibatch_kmeans:bool = False) -> dict:
+        plot:bool = False, unlock:bool = False, n_clust_jobs:int = KMEANS_N_JOBS_TREAD, clust_alg:str = 'kmeans') -> dict:
         """Shares the model not by layers but as a whole - takes all the weights in the model, clusters them and 
         the result is only one key-value table for the whole model.
 
@@ -489,8 +510,8 @@ class WeightShare:
             unlock (bool, optional): If True, the model will be trainable after share. Defaults to False.
             n_clust_jobs (int, optional): Specifies the multiprocessing of clustering. Děfaults to KMEANS_N_JOBS_THREAD specified
                 in the source code.
-            minibatch_kmeans (bool, optional): Specifies if classical Kmeans or MiniBatch Kmeans is used. If true, MiniBatch kmeans is used.
-                Defaults to False.
+            clust_alg (str, optional): Specifies the clustering algorithm. 'kmeas' for classical K-means, 'minibatch-kmeas' for 
+                minibatch kmeans and 'gmm' for gaussian mixture model. Defaults to 'kmeans'.
 
         Raises:
             Exception: If the model was already shared and locked, it cannot be shared and an Exception is rised.
@@ -531,24 +552,37 @@ class WeightShare:
         # clustering
         numpy_weights_2D = np.swapaxes(numpy_weights_2D, 0, 1)
         with parallel_backend('threading', n_jobs=n_clust_jobs):
-            if minibatch_kmeans:
+            if clust_alg == 'kmeans':
                 kmeans = MiniBatchKMeans(n_clusters=model_clusters, random_state=42).fit(numpy_weights_2D)
-            else:
+                labels = kmeans.labels_
+                cluster_centers = kmeans.cluster_centers_[:, [0]]
+                inertia = kmeans.inertia_
+            elif clust_alg == 'minibatch-kmeans':
                 kmeans = KMeans(n_clusters=model_clusters, random_state=42).fit(numpy_weights_2D)
+                labels = kmeans.labels_
+                cluster_centers = kmeans.cluster_centers_[:, [0]]
+                inertia = kmeans.inertia_
+            elif clust_alg == 'gmm':
+                GMM = GaussianMixture(n_components=model_clusters, random_state=42).fit(numpy_weights_2D)
+                labels = GMM.predict(numpy_weights_2D)
+                cluster_centers = GMM.means_[:, [0]]
+                inertia = 0
+            else:
+                raise Exception(f'WeightShare share_total error - unknown clustering algorithm: {clust_alg}')
 
         # reduction of additional dimension
-        processed_cluster_centers = np.concatenate(kmeans.cluster_centers_[:, [0]])
+        processed_cluster_centers = np.concatenate(cluster_centers)
 
         # precision reduction
         if self.float_res_reducer is not None and prec_rtype is not None:
             processed_cluster_centers = self.float_res_reducer.reduce_list(processed_cluster_centers, prec_rtype)
 
         if plot:
-            plot_weights(numpy_weights, processed_cluster_centers, kmeans.labels_, 'All')
+            plot_weights(numpy_weights, processed_cluster_centers, labels, 'All')
         
         # assigning weights if wanted
         if assign:
-            new_weights = np.array([processed_cluster_centers[i] for i in kmeans.labels_])
+            new_weights = np.array([processed_cluster_centers[i] for i in labels])
             new_weights = np.split(new_weights, np.cumsum([l.weight.numel() for l in self.model_layers[:-1]]))
             for i, layer in enumerate(self.model_layers):
                 new_tensor = torch.tensor(new_weights[i]).to(layer.weight.device)
@@ -578,7 +612,7 @@ class WeightShare:
         return {
             'accuracy': model_accuracy if self.test and assign is not None else -1, 
             'compression': compression_rate if assign else -1,
-            'inertia': kmeans.inertia_,
+            'inertia': inertia,
             'times': {
                 'share': total_share,
                 'test': total_test
@@ -586,7 +620,7 @@ class WeightShare:
         }
 
     def finetuned_mod(self, layer_clusters:list, mods_focus:list, mods_spread:list, layer_order:list = None, prec_reduct:list = None,
-        plot:bool = False) -> list:
+        plot:bool = False, savefile:str = None, clust_alg:str = 'kmeans', verbose:bool = False, shared_model_savefile:str = None) -> list:
         """Tryes to get the best shared net by modulating the space. Computationaly intesive to execute!
         Needs to have the original net without modifications at the begining.
 
@@ -597,6 +631,12 @@ class WeightShare:
             layer_order (list, optional): The order of layer processing. Defaults to None (from first to last).
             prec_reduct (list, optional): The share precision reduction. Defaults to None.
             plot (bool, optional): If true, share plots are shown. Defaults to False.
+            savefile (str, optional): If specified, the data are loaded and save into the file. The file format is
+                csv where each row corresponds to a layer and each colum to differend focus value, in the cells there is an array
+                in following format - [focus value, w_delta, inertia, accuracy]. Defaults to None.
+            clust_alg (str, optional): Specifies the clustering algorithm. 'kmeas' for classical K-means, 'minibatch-kmeas' for 
+                minibatch kmeans and 'gmm' for gaussian mixture model. Defaults to 'kmeans'.
+            TODO: verbose
 
         Returns:
             list: list of the best found focus modulations.
@@ -612,53 +652,89 @@ class WeightShare:
 
         best_focus_vals = [None for _ in self.model_layers]
 
+        # savefile content
+        file_content = []
+        if os.path.isfile(savefile):
+            with open(savefile) as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    file_content.append([])
+                    for item in row:
+                        # save file content to edit the file
+                        file_content[-1].append(eval(item))
+
         # saving original weights and initial share
         self.set_reset()
         
         # sharing without modifications
-        self.share(layer_clusters, layer_order=layer_order, prec_reduct=prec_reduct)
+        if shared_model_savefile:
+            self.model.load_state_dict(torch.load(shared_model_savefile))
+        else:
+            self.share(layer_clusters, layer_order=layer_order, prec_reduct=prec_reduct, clust_alg=clust_alg)
 
         for layer in layer_order:
+            if verbose:
+                print(f'Processing layer {layer}')
 
             # layer init
             w_delta = []
             inertia = []
             acc = []
+            already_tested = []
+            if len(file_content) > layer:
+                # load data from savefile
+                already_tested = [x[0] for x in file_content[layer] if x[0] in mods_focus]
+                w_delta = [x[1] for x in file_content[layer] if x[0] in mods_focus]
+                inertia = [x[2] for x in file_content[layer] if x[0] in mods_focus]
+                acc = [x[3] for x in file_content[layer] if x[0] in mods_focus]
+            else:
+                # add data to savefile
+                file_content.append([])
+
             #num_in_cluster_mean = len(org_weight) / SHARE_CLUSTERS[LAYER]
 
-            for focus_val in mods_focus:
-                
+            for focus_val in [x for x in mods_focus if x not in already_tested]:
+
                 # reset layer weights
                 self.model_layers[layer].reset_weight()
 
                 # focus scoring
                 self.model_layers[layer].share_weight(layer_clusters[layer], assign=True, unlock=False, prec_rtype=prec_reduct[layer], 
-                    mod_focus=focus_val, mod_spread=mods_spread[layer])
+                    mod_focus=focus_val, mod_spread=mods_spread[layer], clust_alg=clust_alg)
 
                 post_share_weights = torch.flatten(self.model_layers[layer].weight.cpu()).detach().numpy()
                 w_delta.append(np.sum(np.abs(post_share_weights - self.model_layers[layer].reset_weight_vals['weights'])))
                 inertia.append(self.model_layers[layer].clust_inertia)
                 acc.append(self.test())
 
+                if savefile is not None:
+                    # adding data to savefile
+                    file_content[layer].append([focus_val, w_delta[-1], inertia[-1], acc[-1]])
+                    file_content[layer].sort(key= lambda x: x[0])
+                    with open(savefile, 'w') as f:
+                        for row in file_content:
+                            write = csv.writer(f)
+                            write.writerow(row)
+
             # saving the best focus value and setting the net to this val
             best_focus_vals[layer] = mods_focus[np.argmax(acc)]
-
             self.model_layers[layer].reset_weight()
-
             self.model_layers[layer].share_weight(layer_clusters[layer], assign=True, unlock=False, prec_rtype=prec_reduct[layer], 
-                mod_focus=best_focus_vals[layer], mod_spread=mods_spread[layer])
+                mod_focus=best_focus_vals[layer], mod_spread=mods_spread[layer], clust_alg = clust_alg)
 
             # plot
             if plot:
-                fig = plt.figure(figsize=(18, 7))
-                plt.suptitle(self.model_layers[layer].name)
+                acc = np.array(acc) * 100
+                plt.rc('font', size=15)
+                fig = plt.figure(figsize=(18, 4.5))
+                plt.suptitle(f'Vrstva {layer} - {self.model_layers[layer].name}')
 
                 for i in range(1, 3):
                     
                     ax1 = plt.subplot(1, 2, i)
                     color = 'tab:red'
-                    ax1.set_xlabel('focus modulation')
-                    ax1.set_ylabel('accuracy', color=color)
+                    ax1.set_xlabel('focus')
+                    ax1.set_ylabel('Přesnost [%]', color=color)
                     ax1.plot(mods_focus, acc, color=color)
                     ax1.tick_params(axis='y', labelcolor=color)
 
@@ -666,14 +742,20 @@ class WeightShare:
 
                     color = 'tab:blue'
                     if i == 1:
-                        ax2.set_ylabel('clustering inertia', color=color)
+                        ax2.set_ylabel('Clustering inertia', color=color)
                         ax2.plot(mods_focus, inertia, color=color)
+                        cor = pearsonr(inertia, acc)
+                        ax2.set_title(f'Pearsonův korelační koeficient: {cor[0]:1.4f}, p-hodnota: {cor[1]:1.4f}')
                     else:
-                        ax2.set_ylabel('weight delta', color=color)
+                        ax2.set_ylabel('Delta vah', color=color)
                         ax2.plot(mods_focus, w_delta, color=color)
+                        cor = pearsonr(w_delta, acc)
+                        ax2.set_title(f'Pearsonův korelační koeficient: {cor[0]:1.4f}, p-hodnota: {cor[1]:1.4f}')
                     ax2.tick_params(axis='y', labelcolor=color)
 
                 fig.tight_layout()
+                os.makedirs(f'./graph', exist_ok=True)
+                plt.savefig(f'./graph/ft_{self.model_layers[layer].name}.pdf')
                 plt.show()
 
         return best_focus_vals
@@ -706,7 +788,8 @@ class WeightShare:
         for layer in self.model_layers:
             layer.reset_weight()
 
-    def get_layer_cluster_nums_perf(self, layer_i:int, layer_range:list, perf_fcs:list, pre_perf_fc=None, prec_rtype:str=None, minibatch_kmeans:bool = False) -> list:
+    def get_layer_cluster_nums_perf(self, layer_i:int, layer_range:list, perf_fcs:list, pre_perf_fc=None, prec_rtype:str=None, 
+            clust_alg:str = 'kmeans') -> list:
         """Gets layer cluster performace for a given set of cluster numbers. After executing
         the model is returned to original state.
 
@@ -718,8 +801,8 @@ class WeightShare:
                 It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
                 (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
-            minibatch_kmeans (bool, optional): Specifies if classical Kmeans or MiniBatch Kmeans is used. If true, MiniBatch kmeans is used.
-                Defaults to False.
+            clust_alg (str, optional): Specifies the clustering algorithm. 'kmeas' for classical K-means, 'minibatch-kmeas' for 
+                minibatch kmeans and 'gmm' for gaussian mixture model. Defaults to 'kmeans'.
 
         Raises:
             Exception: if the layer is already locked, error is raised.
@@ -739,7 +822,7 @@ class WeightShare:
         for k in layer_range:
             
             # clustering and scoring the solution
-            self.model_layers[layer_i].share_weight(k, assign=True, unlock=False, prec_rtype=prec_rtype, minibatch_kmeans=minibatch_kmeans)
+            self.model_layers[layer_i].share_weight(k, assign=True, unlock=False, prec_rtype=prec_rtype, clust_alg=clust_alg)
             if pre_perf_fc is not None:
                 pre_perf_fc(self.model_layers[layer_i])
             k_score = [x(self.model_layers[layer_i]) for x in perf_fcs]
@@ -753,7 +836,7 @@ class WeightShare:
         return output
 
     def get_layers_cluster_nums_perfs(self, layer_ranges:list, perf_fcs, pre_perf_fc=None, prec_rtype:str=None, 
-            minibatch_kmeans:bool = False, savefile:str = None) -> list:
+            clust_alg:str = 'kmeans', savefile:str = None) -> list:
         """Gets all the layers cluster performace for a given set of cluster numbers. After executing
         the model is returned to original state.
 
@@ -768,8 +851,8 @@ class WeightShare:
                 It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
                 (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
-            minibatch_kmeans (bool, optional): Specifies if classical Kmeans or MiniBatch Kmeans is used. If true, MiniBatch kmeans is used.
-                Defaults to False.
+            clust_alg (str, optional): Specifies the clustering algorithm. 'kmeas' for classical K-means, 'minibatch-kmeas' for 
+                minibatch kmeans and 'gmm' for gaussian mixture model. Defaults to 'kmeans'.
             savefile (str, optional): is a savefile to be loaded from or saved to. Defaults to None.
 
         Raises:
@@ -813,10 +896,8 @@ class WeightShare:
             if len(layer_range) < 1:
                 # if nothing to compute skip
                 continue
-            
-            print(layer_range, i)
 
-            perf = self.get_layer_cluster_nums_perf(i, layer_range, perf_fcs, pre_perf_fc, prec_rtype=prec_rtype, minibatch_kmeans=minibatch_kmeans)
+            perf = self.get_layer_cluster_nums_perf(i, layer_range, perf_fcs, pre_perf_fc, prec_rtype=prec_rtype, clust_alg=clust_alg)
             perf = [[x[0], x[1][0]] for x in perf]
 
             # update the file  
@@ -844,7 +925,7 @@ class WeightShare:
         return layer_perfs
 
     def get_optimized_layer_ranges(self, layer_ranges:list, perf_fc, perf_lim:float=None, 
-    max_num_range:int=None, savefile:str=None, pre_perf_fc=None, prec_rtype:str=None, minibatch_kmeans:bool=False) -> list:
+    max_num_range:int=None, savefile:str=None, pre_perf_fc=None, prec_rtype:str=None, clust_alg:str='kmeans') -> list:
         """Gets the oprimized clusters nubers for every layer of the model by given metrics.
         The metrics can be that the model with applied clusters number accuracy cant
         get below certain number and/or the number of clusters number can be limited
@@ -861,8 +942,8 @@ class WeightShare:
                 It recieves the model layer after sharing. Defaults to None.
             prec_rtype (str, optional): If not None, it defines the float precision reduction type 
                 (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
-            minibatch_kmeans (bool, optional): Specifies if classical Kmeans or MiniBatch Kmeans is used. If true, MiniBatch kmeans is used.
-                Defaults to False.
+            clust_alg (str, optional): Specifies the clustering algorithm. 'kmeas' for classical K-means, 'minibatch-kmeas' for 
+                minibatch kmeans and 'gmm' for gaussian mixture model. Defaults to 'kmeans'.
 
         Returns:
             list: a list where an index corresponds to a given layer. Each index contains a list of optimized
@@ -874,7 +955,7 @@ class WeightShare:
         # compute performances if file not avalible
         
         perfs = self.get_layers_cluster_nums_perfs(layer_ranges, [perf_fc], pre_perf_fc, 
-            prec_rtype=prec_rtype, minibatch_kmeans=minibatch_kmeans, savefile=savefile)
+            prec_rtype=prec_rtype, clust_alg=clust_alg, savefile=savefile)
 
         # get only the ranges that match performace needs
         for i, perf in enumerate(perfs):
@@ -928,19 +1009,20 @@ def plot_weights(weights:np.array, cluster_centers:list = None, point_labels:lis
     """
 
     plt.clf()
-    plt.figure(figsize=(18,6))
-    plt.title(f'{name} weights')
-    plt.xlabel(f'{name} layer weights')
-    plt.ylabel('count')
+    plt.figure(figsize=(10,10))
+    plt.rc('font', size=20)
+    plt.title(f'Váhy vrstvy {name}')
+    plt.xlabel(f'Váhy vrstvy {name}')
+    plt.ylabel('Počet')
 
     sns.histplot(
         data = pd.DataFrame({
             'weights': weights,
-            'cluster': point_labels,
+            'Shluk': point_labels,
         }),
         x = 'weights',
         bins = 100,
-        hue = 'cluster' if point_labels is not None else None,
+        hue = 'Shluk' if point_labels is not None else None,
         multiple = 'stack'
     )
 
@@ -948,6 +1030,8 @@ def plot_weights(weights:np.array, cluster_centers:list = None, point_labels:lis
     if cluster_centers is not None:
         for center in cluster_centers:
             plt.axvline(center, color='r')
+    
+    plt.savefig('layer_weights_f0.pdf')
 
 def plot_kmeans_space(numpy_weights_2D, name:str = '') -> None:
     """Plots the kmeans weight space before clustering.
@@ -957,15 +1041,18 @@ def plot_kmeans_space(numpy_weights_2D, name:str = '') -> None:
         name (str, optional): Is the layer name or any nyme printed in plot title. Defaults to ''.
     """
 
-    plt.figure(figsize=(18,6))
-    plt.scatter(numpy_weights_2D[0], numpy_weights_2D[1], marker="+", label='weights')
-    plt.axvline(x=np.mean(numpy_weights_2D[0]), color='r', label='mean')
-    plt.axvline(x=0, color='g', label='zero')
-    plt.title(f'{name} weights space for K-means clustering')
-    plt.xlabel('Original weights values')
-    plt.ylabel('Modified weights values')
+    plt.figure(figsize=(10,10))
+    plt.rc('font', size=20)
+    plt.scatter(numpy_weights_2D[0], numpy_weights_2D[1], marker="+", label='Váha')
+    plt.axvline(x=np.mean(numpy_weights_2D[0]), color='r', label='Průměr')
+    plt.axvline(x=0, color='g', label='Nula')
+    plt.title(f'{name} shlukovací prostor pro K-Means')
+    plt.xlabel('Původní váhy')
+    plt.ylabel('Modifikovaný prostor - Tanh')
     plt.legend()
+    plt.savefig('layer_kmeans_f0.pdf')
     plt.show()
+
 
 def compute_cr(num_w_old:int, num_w_new:int, bits_w_old:int, bits_w_new:int, mapping_bits:int = None) -> float:
     """Computes compression rate of the layer by following expression:
