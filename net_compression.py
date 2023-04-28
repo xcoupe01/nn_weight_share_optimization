@@ -26,7 +26,7 @@ RANGE_OPTIMIZATION_FILE = lambda nn, prec: f'./models/{nn}/saves/{nn}_layer_perf
 N2_OPT = False
 
 def compress_net(compress_alg:str, search_ranges:tuple, num_iter:int, num_pop:int, show_plt:bool=False, save_plt:bool=False) -> None:
-    """Lenet compression function.
+    """Net compression function.
 
     Args:
         compress_alg (str): is the optimizer algorithm for the optimization.

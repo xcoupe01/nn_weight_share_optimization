@@ -5,7 +5,7 @@ from utils.weight_sharing import *
 from utils.fitness_controller import FitnessController
 from .compressor_config import CompressConfig
 
-def logger_fc(rnd_controler:RandomController, before_acc:float, save_data:pd.DataFrame=None) -> pd.DataFrame:
+def logger_fc(rnd_controller:RandomController, before_acc:float, save_data:pd.DataFrame=None) -> pd.DataFrame:
     """Logger function for PSO search
 
     Args:
@@ -23,7 +23,7 @@ def logger_fc(rnd_controler:RandomController, before_acc:float, save_data:pd.Dat
 
     # create new dataframe
     new_data = copy.deepcopy(CompressConfig.RND_DATA)
-    indiv = rnd_controler.current_indiv
+    indiv = rnd_controller.current_indiv
     new_data['representation'].append(indiv.representation)
     new_data['accuracy'].append(indiv.data['accuracy'])
     new_data['accuracy_loss'].append(before_acc - indiv.data['accuracy'])

@@ -4,8 +4,21 @@ import torch
 
 
 class MnistDataset:
+    """Class to encapsulate the MNIST dataset for easier usage.
+    """
 
     def __init__(self, batch_size:int, dataset_path:str, val_split:float=0.5):
+        """Inits the MnistDataset object, ensures the data (loads them if they are
+        avaliable on the system or they are downloaded) and splits the into separate
+        train, validation and test dataset.
+
+        Args:
+            batch_size (int): Is the datasets batch size.
+            dataset_path (str): Is the folder, where the raw data are, or where they will be
+                downloaded to.
+            val_split (float, optional): Is the validation / Test dataset split (the data are splitted
+                from the original MNIST valid subdataset). Defaults to 0.5.
+        """
         
         self.batch_size = batch_size
 

@@ -123,6 +123,9 @@ class Layer:
         """Runs clustering algorithm to determine the centroinds of given number of clustert, then
         computes the correct weight tensor for the network.
 
+        The k-means `y` space modification is calculated by following expression:
+        y = mods_spread * (x.max - x.min) * tanh(mod_focus * (x - x.mean))
+
         Args:
             n_weights (int): is the number of clusters in the new weight.
             plot (bool, optional): if true, the new weight tensor is plotted. Defaults to False.
@@ -139,10 +142,6 @@ class Layer:
                 in the source code.
             clust_alg (str, optional): Specifies the clustering algorithm. 'kmeas' for classical K-means, 'minibatch-kmeas' for 
                 minibatch kmeans and 'gmm' for gaussian mixture model. Defaults to 'kmeans'.
-
-            The k-means `y` space modification is calculated by following expression:
-
-            y = mods_spread * (x.max - x.min) * tanh(mod_focus * (x - x.mean))
 
         Raises:
             Exception: If the shaing is runned after locking the last sharing, then an error is raised.
@@ -257,7 +256,7 @@ class WeightShare:
         Args:
             model (torch.nn.Module): is the model thats going to be weight-shared.
             test (Callable[[None], float], optional): is a function that tests the accuracy of a given network. 
-            If None, no tests are done and the accuracy reading will default to -1. Defaults to None.
+                If None, no tests are done and the accuracy reading will default to -1. Defaults to None.
             opt_create (Callable[[torch.nn.Module], torch.optim.Optimizer], optional): is a function that returns new optimizer 
                 of the given network which is used before every training. If None no retraining will be conducted. Defaults to None.
             train (Callable[[torch.optim.Optimizer, int], None], optional): is a function that trains the given network. 
@@ -338,7 +337,7 @@ class WeightShare:
 
         Args:
             mapping_bits (int, optional): Defines how many bits will have the key part of the 
-            compression table. Defaults to None.
+                compression table. Defaults to None.
 
         Returns:
             float: The compression rate of whole model.
@@ -372,7 +371,7 @@ class WeightShare:
                 to output layer).
             retrain_amount (list, optional): specifies the retrain amount - the index of the retrain amount corresponds to the
                 layer to be retrained. Defaults to None (no retraining).
-            prec_rtype (list, optional): If not None, it defines the float precision reduction type for each layer
+            prec_reduct (list, optional): If not None, it defines the float precision reduction type for each layer
                 (for more information go to 'utils/float_prec_reducer/FloatPrecReducer.py'). Defaults to None.
             mods_focus (list, optional): If not None, it defines the clustering space modification for each layer.
                 The modifications is described in the Layer.share function as mod_focus parameter. Defaults to None.
@@ -636,7 +635,9 @@ class WeightShare:
                 in following format - [focus value, w_delta, inertia, accuracy]. Defaults to None.
             clust_alg (str, optional): Specifies the clustering algorithm. 'kmeas' for classical K-means, 'minibatch-kmeas' for 
                 minibatch kmeans and 'gmm' for gaussian mixture model. Defaults to 'kmeans'.
-            TODO: verbose
+            verbose (bool, optional): If True, the process is being ptinted into the console. Defaults to False. 
+            shared_model_savefile (str, optiona): If defined, the shared model is not computed in the first step, but
+                its loaded, which saves time. Path to the save file to be loaded. Defaults to None.
 
         Returns:
             list: list of the best found focus modulations.
@@ -1030,8 +1031,6 @@ def plot_weights(weights:np.array, cluster_centers:list = None, point_labels:lis
     if cluster_centers is not None:
         for center in cluster_centers:
             plt.axvline(center, color='r')
-    
-    plt.savefig('layer_weights_f0.pdf')
 
 def plot_kmeans_space(numpy_weights_2D, name:str = '') -> None:
     """Plots the kmeans weight space before clustering.
@@ -1050,7 +1049,6 @@ def plot_kmeans_space(numpy_weights_2D, name:str = '') -> None:
     plt.xlabel('Původní váhy')
     plt.ylabel('Modifikovaný prostor - Tanh')
     plt.legend()
-    plt.savefig('layer_kmeans_f0.pdf')
     plt.show()
 
 
@@ -1077,7 +1075,7 @@ def compute_cr(num_w_old:int, num_w_new:int, bits_w_old:int, bits_w_new:int, map
 
         Raises:
             Exception: if the mapping_bits is seted and the number of elements is
-            higher than the mapping_bits can map.
+                higher than the mapping_bits can map.
 
         Returns:
             float: the compression rate for the given parameters.

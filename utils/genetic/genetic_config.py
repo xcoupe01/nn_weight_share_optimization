@@ -28,7 +28,7 @@ def pair_rulette(individuals:list, num_pairs:int) -> list:
 
     Raises:
         Exception: When the RN generator failes and the algorithm cannot create proper
-        pairs, an exception is raised.
+            pairs, an exception is raised.
 
     Returns:
         list: list of pairing of individuals ready for crossbreeding.

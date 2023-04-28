@@ -20,7 +20,19 @@ DOWNLOAD_URLS_DATASET = {
 DOWLOAD_URL_CLASSES = 'https://s3.amazonaws.com/deep-learning-models/image-models/imagenet_class_index.json'
 
 class Imagenette(Dataset):
-    def __init__(self, root_dir, classes, transform=None):
+    """Implementation of the Imagenette dataset class.
+    """
+
+    def __init__(self, root_dir:str, classes:list, transform:transforms=None):
+        """Inits the dataset and creates hooks to the needed files
+
+        Args:
+            root_dir (str): Is the folder, where the data are stored.
+            classes (list): Is the lisf of tuples, where the first element is the 
+                class id and the second is the class string. 
+            transform (transforms, optional): Data transforms. Defaults to None.
+        """
+
         self.root_dir = root_dir
         self.transform = transform
         self.length = 0
@@ -32,10 +44,26 @@ class Imagenette(Dataset):
             self.files += curr_dir_files
             self.length += len(curr_dir_files)
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """Tells the length of the dataset.
+
+        Returns:
+            int: The dataset length
+        """
+
         return self.length
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx:int) -> tuple:
+        """Returns the needed item of the dataset.
+
+        Args:
+            idx (int): Is the index of wanted dataset item.
+
+        Returns:
+            tuple: Tuple, where the first element is the data and the second
+                is the data label.
+        """
+
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
@@ -50,8 +78,25 @@ class Imagenette(Dataset):
         return (image, [i[0] for i in self.classes].index(self.files[idx][0]))
 
 class ImagenetteDataset:
+    """Class to encapsulate the Imagenette dataset for easier usage.
+    """
 
     def __init__(self, batch_size:int, dataset_path:str, val_split:float=0.5, dataset_type:str = 'imagenette2'):
+        """Inits the Dataset object, ensures the data (if they are avaliable, 
+        they are loade, if not, they are downloaded), splits the into separate
+        train, validation and test dataset.
+
+
+        Args:
+            batch_size (int): Is the datasets batch size.
+            dataset_path (str): Is the folder, where the raw data are, or where they will be
+                downloaded to.
+            val_split (float, optional): Is the validation / Test dataset split (the data are splitted
+                from the original Imagenette valid subdataset). Defaults to 0.5.
+            dataset_type (str, optional): Specifies the dataset type, there are three types:
+                `imagenette2`, `imagewoof` and `imagewang`. For more detail 
+                look up https://github.com/fastai/imagenette. Defaults to 'imagenette2'.
+        """
         
         self.batch_size = batch_size
         self.dataset_type = dataset_type

@@ -1,0 +1,31 @@
+site_name: Weight-Sharing optimization
+
+theme:
+  name: "material"
+
+plugins:
+  - mkdocstrings
+
+nav:
+  - Home: index.md
+  - Utils:
+    - Weight sharing: utils/weight_share.md
+    - Dynamic Fitness: utils/fitness.md
+    - Genetic optimization: utils/genetic.md
+    - Random Search: utils/rnd.md
+    - Particle Swarm Optimization: utils/pso.md
+    - Aditional Quantization: utils/prec_red.md
+  - Compressors:
+    - Compressor config: compressors/compress_config.md
+    - Optimizers:
+      - Blackhole: compressors/optimizers/BH.md
+      - Particle Swarm Optimization: compressors/optimizers/PSO.md
+      - Random Search: compressors/optimizers/RND.md
+      - Genetic Algortihm: compressors/optimizers/GA.md
+      - Total Compression: compressors/optimizers/TOT.md
+  - Data:
+    - MNIST: data/mnist.md
+    - Imagenette: data/imagenette.md
+  - Notebooks:
+    - Le-Net-5: notebooks/lenet.md
+    - MobileNet_v2: notebooks/mobilenet.md

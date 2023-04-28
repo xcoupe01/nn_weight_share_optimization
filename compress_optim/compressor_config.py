@@ -3,6 +3,10 @@ from data.utils.mnist_utils import *
 from utils.weight_sharing import *
 
 class CompressConfig:
+    """Collection of compression setting used in the CLI compression.
+    Look at the source code to learn abot them.
+    """
+    
     # shared config
     SAVE_EVERY = 1
     VERBOSE = True
@@ -246,7 +250,7 @@ def set_save_files_path(folder:str):
     CompressConfig.BH_SAVE_FILE = os.path.join(folder, 'BH_save.csv')
     CompressConfig.RND_SAVE_FILE = os.path.join(folder, 'RND_save.csv')
 
-def fitness_vals_fc(individual, ws_controller:WeightShare):
+def fitness_vals_fc(individual, ws_controller:WeightShare) -> list:
     """Base values for computing fitness getter.
 
     Args:
@@ -273,7 +277,7 @@ def fitness_vals_fc(individual, ws_controller:WeightShare):
     
     return [individual.data['accuracy'], individual.data['compression']]
 
-def fit_from_vals(data:list[float], targ_vals:list[float]):
+def fit_from_vals(data:list[float], targ_vals:list[float]) -> float:
     """Computes fitness from the values that generates the function above.
 
     Args:
