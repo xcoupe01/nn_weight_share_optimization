@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: CNN with imagenet compression implementation 
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import torch
 import torch.nn as nn
 import argparse

@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Imagenette dataset implemetnation
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import sys
 sys.path.append('../')
 

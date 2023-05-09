@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Implementation of total CNN compression 
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import pandas as pd
 import copy
 

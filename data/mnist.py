@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: MNIST dataset implemetnation
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 from torchvision import transforms, datasets
 from torch.utils.data import DataLoader, random_split
 import torch

@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Implementation of Random CNN compression 
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import pandas as pd
 
 from utils.rnd import RandomController

@@ -1,3 +1,12 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Implementation float32 to float16 or float8 precision reducer
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
+
 import sys
 sys.path.append('../code')
 from utils.float_prec_reducer.Float8Reducer import Float8Reducer

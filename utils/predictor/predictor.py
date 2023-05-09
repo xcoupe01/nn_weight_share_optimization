@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Net accuracy and compression predictor
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import torch
 import time
 import matplotlib.pyplot as plt

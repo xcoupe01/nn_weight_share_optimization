@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Configuration of Genetic algorithm
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import random
 
 RUN_CELLING = 1000 # restricts while True runs 

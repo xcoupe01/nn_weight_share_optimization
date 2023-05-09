@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: configuration of CNN compression 
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import math
 from data.utils.mnist_utils import *
 from utils.weight_sharing import *

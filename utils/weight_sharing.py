@@ -2,7 +2,8 @@
 
 """
 Author: Vojtěch Čoupek
-Description: Implementation of Weight-Sharing techique for pytorch models
+Description: Implementation dynamic target fitness
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
 """
 
 import torch

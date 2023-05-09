@@ -1,3 +1,12 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: MNIST utilities
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+Inspired by: https://github.com/erykml/medium_articles/blob/master/Computer%20Vision/lenet5_pytorch.ipynb
+"""
+
 # inspired by: https://github.com/erykml/medium_articles/blob/master/Computer%20Vision/lenet5_pytorch.ipynb
 # for Le-Net
 

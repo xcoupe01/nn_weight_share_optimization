@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Implementation dynamic target fitness
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import numpy as np
 import pandas as pd
 
@@ -109,25 +117,41 @@ class FitnessController:
         for individual in individuals:
             individual.compute_fitness(fit_lam)
 
-    def fit_from_df(self, df:pd.DataFrame, verbose:bool = False):
+    def fit_from_df(self, df:pd.DataFrame, verbose:bool = False, test_mode:bool = False):
         """Computes fitness column to pandas dataframe containing the optimization
         process.
 
         Args:
             df (pd.DataFrame): Is the pandas dataframe.
             verbose (bool, optional): If true, the target updates are printed out in console. Defaults to False.
+            test_mode (bool, optional): If true, enables to read test savefiles. Defaults to False.
         """
 
         # update the target
-        all_vals = np.transpose(np.array([df['accuracy'], df['compression']]))
+        if test_mode:
+            all_vals = []
+            for item in (df['representation'] if 'representation' in df.columns else df['chromosome']):
+                all_vals.append(eval(item))
+        else:
+            all_vals = np.transpose(np.array([df['accuracy'], df['compression']]))
         self.update_targs(all_vals, verbose)
 
         # generate fitness column
         df['fitness'] = 0.0
-        for i, row in df.iterrows():
-            df['fitness'][i] = self.fit_from_vals(row, self.targ)
+        if test_mode:
+            for i, row in df.iterrows():
+                df['fitness'][i] = self.fit_from_vals(eval(row['representation']) if 'representation' in df.columns else eval(row['chromosome']), self.targ)
+        else:
+            for i, row in df.iterrows():
+                df['fitness'][i] = self.fit_from_vals(row, self.targ)
 
     def update_targ_by_dfs(self, dfs:list[pd.DataFrame], verbose:bool):
+        """Updates target by multiple separate dataframes.
+
+        Args:
+            dfs (list[pd.DataFrame]): is the list of dataframes to be updated from.
+            verbose (bool): if True, debud prints are shown.
+        """
         
         for df in dfs:
             self.fit_from_df(df, verbose=verbose)

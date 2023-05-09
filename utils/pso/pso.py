@@ -1,3 +1,13 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Implementation of PSO
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
+import sys
+sys.path.append('../code')
 import random
 import copy
 import pandas as pd
@@ -244,7 +254,7 @@ class PSOController:
 
         return f'PSO Controller: time: {self.time}, num particles {len(self.swarm)}'
 
-    def load_from_pd(self, dataframe:pd.DataFrame, verbose:bool = False) -> None:
+    def load_from_pd(self, dataframe:pd.DataFrame, verbose:bool = False, test_mode:bool = False) -> None:
         """Loads the PSO controller state from a pandas dataframe.
         It assumes the dataframe contains the dataframe is saved in a way, that there
         are at least position, velocity, compression rate and accuracy attributes for each time step
@@ -256,13 +266,14 @@ class PSOController:
         Args:
             dataframe (pd.DataFrame): is the dataframe to be loaded from.
             verbose (bool, optional): If true, prints out informations. Defaults to False.
+            test_mode (bool, optional): If true, enables to read test savefiles. Defaults to False.
         """
         
         # setting the controller
         self.time = dataframe.time.max()
         self.jump_start = True
 
-        self.fitness_controller.fit_from_df(dataframe, verbose=verbose)
+        self.fitness_controller.fit_from_df(dataframe, verbose=verbose, test_mode=test_mode)
 
         # setting the swarm
         for i in range(len(self.swarm)):
@@ -285,10 +296,13 @@ class PSOController:
                 self.social_c, 
                 eval(best_fit.iloc[0]['position']) if type(best_fit.iloc[0]['position']) is str else best_fit.iloc[0]['position'],
                 eval(best_fit.iloc[0]['velocity']) if type(best_fit.iloc[0]['velocity']) is str else best_fit.iloc[0]['velocity'])
-            particle_best.data = {
-                'accuracy': best_fit.iloc[0]['accuracy'], 
-                'compression': best_fit.iloc[0]['compression'],
-            }
+            if not test_mode:
+                particle_best.data = {
+                    'accuracy': best_fit.iloc[0]['accuracy'], 
+                    'compression': best_fit.iloc[0]['compression'],
+                }
+            else:
+                particle_best.data = eval(best_fit.iloc[0]['representation'])
             particle_best.fitness = best_fit.iloc[0]['fitness']
             self.swarm[i].my_best = particle_best
 
@@ -414,22 +428,25 @@ if __name__ == '__main__':
             new_data['position'].append(particle.position)
             new_data['velocity'].append(particle.velocity)
             new_data['representation'].append(particle.representation)
-            new_data['fitness'].append(particle.current_fit)
+            new_data['fitness'].append(particle.fitness)
             new_data['time'].append(controller.time)
 
         data_df = data_df.append(pd.DataFrame(new_data), ignore_index=True)
 
     # init fit
-    get_fit_vals = lambda p: [- pow(p.representation[0], 2), - pow(p.representation[1], 2)]
-    def fit_from_vals(p, fv, mv): p.fitness = fv[0] + fv[1]
-    fitness_cont = FitnessController([0, 0], get_fit_vals, fit_from_vals)
+    def get_fit_vals (p):
+        p.data = [- pow(p.representation[0], 2), - pow(p.representation[1], 2)]
+        return p.data
+    def fit_from_vals(fv, trg):
+        return fv[0] + fv[1]
+    fitness_cont = FitnessController([0, 0], get_fit_vals, fit_from_vals, lock=True)
     
     # init controllers
     controler = PSOController(10, [range(-100, 100), range(-100, 100)], [1, 1], inertia_c=0.8, fitness_cont=fitness_cont, BH_radius=1, BH_vel_tresh=1)
 
     # load the controler with data - probably wont work :(
     if len(data_df.index) > 0:
-        controler.load_from_pd(data_df)
+        controler.load_from_pd(data_df, test_mode = True)
 
     # run optimization
     print(controler.run(20, logger_fc, verbose=True))

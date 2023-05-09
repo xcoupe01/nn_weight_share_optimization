@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Implementation float32 to float8 precision reducer
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import numpy as np
 
 BIT_LEN = 8

@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Implementation dynamic target fitness
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
@@ -20,8 +28,9 @@ CZECH_NAMES = {
     'compression': 'Komprese',
     'Value': 'Hodnota',
     'Target': 'Cíl',
-    'acceptable': 'Hondocení bodu',
-    'type': 'Typ bodu'
+    'acceptable': 'Hodnocení bodu',
+    'type': 'Typ bodu',
+    'pareto': 'Paretova fronta'
 }
 
 def plot_alncl(dataframe:pd.DataFrame) -> None:
@@ -39,7 +48,7 @@ def plot_alcr(dataframe:pd.DataFrame, acceptable_division:float=None, target:lis
     if pareto:
         pareto_front = pareto_from_df(dataframe)
         pareto_front['accuracy_loss'] = pareto_front['accuracy_loss'] * 100
-        sns.lineplot(data=pareto_front, x='compression', y='accuracy_loss', linestyle='dashed', color='g')
+        sns.lineplot(data=pareto_front, x='compression', y='accuracy_loss', linestyle='dashed', color='g', linewidth=4, label=names['pareto'])
         plt.ylabel(names['accuracy loss [%]'])
         plt.xlabel(names['compression'])
 
@@ -58,18 +67,19 @@ def plot_alcr(dataframe:pd.DataFrame, acceptable_division:float=None, target:lis
 
     plot = None
     if acceptable_division is not None:
-        plot = sns.scatterplot(data=dataframe, x='compression', y='accuracy loss [%]', hue='acceptable', style='type', palette=SNS_PALETTE)
+        plot = sns.scatterplot(data=dataframe, x='compression', y='accuracy loss [%]', hue='acceptable', style='type', palette=SNS_PALETTE, s=100)
         plot.axhline(acceptable_division * 100, color='red', alpha=0.2)
         plt.ylabel(names['accuracy loss [%]'])
         plt.xlabel(names['compression'])
 
-        L=plt.legend()
-        L.get_texts()[0].set_text(names['acceptable'])
-        L.get_texts()[1].set_text(names['passed'])
-        L.get_texts()[2].set_text(names['failed'])
-        L.get_texts()[3].set_text(names['type'])
-        L.get_texts()[4].set_text(names['Value'])
-        L.get_texts()[5].set_text(names['Target'])
+        L=plt.legend(markerscale=2)
+        L.get_texts()[0].set_text(names['pareto'])
+        L.get_texts()[1].set_text(names['acceptable'])
+        L.get_texts()[2].set_text(names['passed'])
+        L.get_texts()[3].set_text(names['failed'])
+        L.get_texts()[4].set_text(names['type'])
+        L.get_texts()[5].set_text(names['Value'])
+        L.get_texts()[6].set_text(names['Target'])
 
         sns.set_style("whitegrid", {'axes.grid' : False})
         sns.scatterplot(data=dataframe, x='compression', y='accuracy [%]', ax=plot.axes.twinx(), alpha=0)
@@ -77,8 +87,8 @@ def plot_alcr(dataframe:pd.DataFrame, acceptable_division:float=None, target:lis
         sns.despine(bottom=True, left=True)
         plt.ylabel(names['accuracy [%]'])
     else:
-        plot = sns.scatterplot(data=dataframe, x='compression', y='accuracy loss [%]', hue='type', palette=SNS_PALETTE)
-        plt.legend(title=names['acceptable'])
+        plot = sns.scatterplot(data=dataframe, x='compression', y='accuracy loss [%]', hue='type', palette=SNS_PALETTE, s=100)
+        plt.legend(markerscale=2)
         plt.ylabel(names['accuracy loss [%]'])
         plt.xlabel(names['compression'])
         sns.set_style("whitegrid", {'axes.grid' : False})

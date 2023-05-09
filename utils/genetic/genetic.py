@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Implementation of Genetic algorithm
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import sys
 sys.path.append('../code')
 from utils.genetic.genetic_config import EvolConfig
@@ -164,7 +172,7 @@ class GeneticController:
         
         return best_chrom
 
-    def load_from_pd(self, df:pd.DataFrame, verbose:bool = False) -> None:
+    def load_from_pd(self, df:pd.DataFrame, verbose:bool = False, test_mode:bool = False) -> None:
         """Loads the Genetic controller state from a pandas dataframe.
 
         Created for the pourpouses of WS optimalization!
@@ -172,12 +180,13 @@ class GeneticController:
         Args:
             df (pd.DataFrame): is the dataframe to be loaded from.
             verbose (bool, optional): If true, prints out informations. Defaults to False.
+            test_mode (bool, optional): If true, enables to read test savefiles. Defaults to False.
         """
 
         self.generation = df['generation'].max()
         self.jump_start = True
 
-        self.fitness_cont.fit_from_df(df, verbose)
+        self.fitness_cont.fit_from_df(df, verbose, test_mode=test_mode)
 
         df = df[df['generation'] == self.generation].reset_index()
 
@@ -207,16 +216,19 @@ if __name__ == '__main__':
         data_df = data_df.append(pd.DataFrame(new_data), ignore_index=True)
 
     # init fit
-    get_fit_vals = lambda p: [- pow(p.representation[0], 2), - pow(p.representation[1], 2)]
-    def fit_from_vals(p, fv, mv): p.fitness = fv[0] + fv[1]
-    fitness_cont = FitnessController([0, 0], get_fit_vals, fit_from_vals)
+    def get_fit_vals (p):
+        p.data = [- pow(p.chromosome[0], 2), - pow(p.chromosome[1], 2)]
+        return p.data
+    def fit_from_vals(fv, trg):
+        return fv[0] + fv[1]
+    fitness_cont = FitnessController([0, 0], get_fit_vals, fit_from_vals, lock=True)
     
     # init controllers
     controler = GeneticController([range(-100, 100), range(-100, 100)], 5, fitness_cont)
 
     # load the controler with data - probably wont work :(
     if len(data_df.index) > 0:
-        controler.load_from_pd(data_df)
+        controler.load_from_pd(data_df, test_mode=True)
 
     # run optimization
     print(controler.run(10, logger_fc, verbose=True))

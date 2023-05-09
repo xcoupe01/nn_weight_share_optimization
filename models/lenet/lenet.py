@@ -1,4 +1,11 @@
-# inspired by: https://github.com/erykml/medium_articles/blob/master/Computer%20Vision/lenet5_pytorch.ipynb
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Implementation of Le-Net-5 CNN
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+Inspired by: https://github.com/erykml/medium_articles/blob/master/Computer%20Vision/lenet5_pytorch.ipynb
+"""
 
 import torch
 import torch.nn as nn

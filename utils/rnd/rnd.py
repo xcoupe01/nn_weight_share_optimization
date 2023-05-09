@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Implementation of random search
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import sys
 sys.path.append('../code')
 import random
@@ -65,7 +73,7 @@ class RandomController:
         """
         return f'RandomController iter:{self.iteration} best:{self.best_indiv}'
 
-    def load_from_pd(self, dataframe:pd.DataFrame, verbose:bool = False) -> None:
+    def load_from_pd(self, dataframe:pd.DataFrame, verbose:bool = False, test_mode:bool=False) -> None:
         """Loads the random controller state from a pandas dataframe.
         The dataframe must contain fitness and representation columns.
 
@@ -74,10 +82,11 @@ class RandomController:
         Args:
             dataframe (pd.DataFrame): is the dataframe to be loaded from.
             verbose (bool, optional): If true, prints out informations. Defaults to False.
+            test_mode (bool, optional): If true, enables to read test savefiles. Defaults to False.
         """
         self.iteration = len(dataframe.index) - 1
         self.best_indiv = Individual(self.individual_type)
-        self.fitness_cont.fit_from_df(dataframe, verbose)
+        self.fitness_cont.fit_from_df(dataframe, verbose, test_mode)
         best_row = dataframe.loc[dataframe['fitness'].idxmax()]
         self.best_indiv.fitness = best_row['fitness']
         self.best_indiv.representation = eval(best_row['representation'])
@@ -146,16 +155,19 @@ if __name__ == '__main__':
         data_df = data_df.append(pd.DataFrame(new_data), ignore_index=True)
     
     # init fit
-    get_fit_vals = lambda p: [- pow(p.representation[0], 2), - pow(p.representation[1], 2)]
-    def fit_from_vals(p, fv, mv): p.fitness = fv[0] + fv[1]
-    fitness_cont = FitnessController([0, 0], get_fit_vals, fit_from_vals)
+    def get_fit_vals (p):
+        p.data = [- pow(p.representation[0], 2), - pow(p.representation[1], 2)]
+        return p.data
+    def fit_from_vals(fv, trg): 
+        return fv[0] + fv[1]
+    fitness_cont = FitnessController([0, 0], get_fit_vals, fit_from_vals, lock=True)
 
     # init controllers
     controler = RandomController([range(-100, 100), range(-100, 100)], fitness_cont)
     
     # load the controler with data - probably wont work :(
     if len(data_df.index) > 0:
-        controler.load_from_pd(data_df)
+        controler.load_from_pd(data_df, test_mode=True)
 
     # run optimization
     print(controler.run(10, logger_fc, verbose=True))

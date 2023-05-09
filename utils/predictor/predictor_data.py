@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Net accuracy and compression predictor dataset creation
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+"""
+
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 import os

@@ -1,3 +1,12 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Dataset donwloading utility
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+Inspired by: https://stackoverflow.com/questions/15644964/python-progress-bar-and-downloads 
+"""
+
 import requests
 import os
 import sys

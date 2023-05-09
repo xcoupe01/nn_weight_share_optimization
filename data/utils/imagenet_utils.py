@@ -1,3 +1,13 @@
+#!/usr/bin/env python
+
+"""
+Author: Vojtěch Čoupek
+Description: Imagenet utilities
+Project: Weight-Sharing of CNN - Diploma thesis FIT BUT 2023
+Inspired by: - https://github.com/pytorch/examples/blob/master/imagenet/main.py
+             - https://github.com/leaderj1001/MobileNetV3-Pytorch/blob/2cf3efa64d00c45e9ac61c3ef362396e9700fdb8/main.py#L117
+"""
+
 import torch
 from torch.utils.data import DataLoader
 
